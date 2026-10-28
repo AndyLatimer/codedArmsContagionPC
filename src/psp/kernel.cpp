@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <cstdarg>
 #include <cstdio>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -110,6 +111,8 @@ struct Thread {
     int exitStatus = 0;
     int wakeupCount = 0;
     std::function<void()> hostBody; // HLE helper thread: runs host code instead of guest code
+    int lastImport = -1;            // debugging (dumpThreads): its last system call
+    uint32_t lastImportRa = 0;
 };
 
 static std::mutex g_km;
@@ -213,6 +216,7 @@ static void schedule(std::unique_lock<std::mutex>& lk, Thread* self) {
 }
 
 int currentThreadId() { return t_self ? t_self->id : 0; }
+extern "C" int ca_trace_thread_id() { return currentThreadId(); }
 
 bool waitUntil(const std::function<bool()>& ready, uint64_t timeoutUs, bool processCallbacks) {
     std::unique_lock<std::mutex> lk(g_km);
@@ -489,6 +493,7 @@ extern "C" void hle_call(Ctx* c, int idx) {
     ImportSlot& s = g_imports[(size_t)idx];
     t_lastImport = idx;
     t_lastImportRa = c->r[31];
+    if (t_self) { t_self->lastImport = idx; t_self->lastImportRa = c->r[31]; }
     static const bool stats = std::getenv("CA_HLE_STATS") != nullptr;
     static const bool byThread = stats && std::getenv("CA_HLE_STATS")[0] == 't';
     if (stats) hleStats(s.name, byThread ? (uint32_t)currentThreadId() : c->r[31]);
@@ -497,6 +502,7 @@ extern "C" void hle_call(Ctx* c, int idx) {
         log("%s(%08x, %08x, %08x, %08x) thread=%d ra=%08x", s.name.c_str(), c->r[4], c->r[5], c->r[6], c->r[7], currentThreadId(), c->r[31]);
     if (s.fn) {
         s.fn(c);
+        if (g_trace) log("  %s -> %08x", s.name.c_str(), c->r[2]);
     } else {
         if (!s.warned) {
             log("UNIMPLEMENTED %s (a0=%08x a1=%08x) -> 0", s.name.c_str(), c->r[4], c->r[5]);
@@ -505,6 +511,50 @@ extern "C" void hle_call(Ctx* c, int idx) {
         c->r[2] = 0;
     }
     afterHle(c);
+}
+
+static void dumpEventFlags(); // caller holds g_km
+
+// Debugging (CA_THREAD_DUMP): every guest thread, its state and last system call.
+void dumpThreads() {
+    static const char* kState[] = {"dormant", "ready", "running", "waiting", "dead"};
+    std::lock_guard<std::mutex> lk(g_km);
+    for (auto& [id, t] : g_threads) {
+        const char* imp = t->lastImport >= 0 && (size_t)t->lastImport < g_imports.size() ? g_imports[(size_t)t->lastImport].name.c_str() : "-";
+        log("[threads] %d '%s' prio %x %s, last call %s (ra %08x)", id, t->name.c_str(), t->priority, kState[(int)t->state], imp, t->lastImportRa);
+    }
+    dumpEventFlags();
+}
+
+// ---- preemption -------------------------------------------------------------------------
+extern "C" volatile int rt_preempt_flag = 0;
+
+extern "C" void rt_preempt(Ctx* c) {
+    rt_preempt_flag = 0;
+    if (!t_self || g_inInterrupt) return;
+    afterHle(c); // interrupts, then the CPU to a higher-priority ready thread
+}
+
+// Host timer: requests preemption of the running guest thread when a waiting thread of higher
+// priority can run (its deadline passed or its condition holds), and once per frame so that
+// interrupts are delivered to threads that spin without system calls.
+static void preemptionTimer() {
+    uint64_t lastFrame = 0;
+    while (!g_exit) {
+        std::this_thread::sleep_for(std::chrono::microseconds(500));
+        std::lock_guard<std::mutex> lk(g_km);
+        Thread* cur = g_current;
+        if (!cur || cur->state != TState::Running) continue;
+        uint64_t now = nowUs();
+        bool want = now - lastFrame >= 16683;
+        if (want) lastFrame = now;
+        // Wait conditions may consume what they wait for (a semaphore count), so they are only
+        // evaluated by reevaluateWaits, which readies the thread when one holds.
+        reevaluateWaits();
+        for (auto& [id, t] : g_threads)
+            if (t->state == TState::Ready && t->priority < cur->priority) want = true;
+        if (want) rt_preempt_flag = 1;
+    }
 }
 
 bool callImportByAddress(Ctx* c, uint32_t addr) {
@@ -672,6 +722,9 @@ struct EventFlag {
 };
 static std::map<int, Sema> g_semas;
 static std::map<int, EventFlag> g_evfs;
+static void dumpEventFlags() {
+    for (auto& [id, e] : g_evfs) log("[evflag] %d (%x) '%s' pattern %08x", id, id, e.name.c_str(), e.pattern);
+}
 
 static uint32_t readTimeout(uint32_t ptr) { return ptr ? read32(ptr) : 0; }
 
@@ -706,11 +759,25 @@ static bool loadModule(const std::vector<uint8_t>& elf, uint32_t base, uint32_t&
     auto rd16 = [&](size_t o) { uint16_t v; std::memcpy(&v, &elf[o], 2); return v; };
     if (elf.size() < 52 || std::memcmp(elf.data(), "\x7f" "ELF", 4) != 0 || rd16(16) != 0xFFA0) return false;
     uint32_t phoff = rd(28), shoff = rd(32);
-    uint16_t shnum = rd16(48);
-    uint32_t segOff = rd(phoff + 4), segFile = rd(phoff + 16), segMem = rd(phoff + 20);
-    std::memset(hostPtr(base), 0, segMem);
-    std::memcpy(hostPtr(base), &elf[segOff], segFile);
-    // Relocations: identical algorithm to tools/recomp/pspelf.py (verified on this module).
+    uint16_t phnum = rd16(44), shnum = rd16(48);
+    // PT_LOAD segments at their vaddr (BOOT.BIN has one; PSMF_JK.PRX code + data).
+    std::vector<uint32_t> segVaddr;
+    uint32_t memEnd = 0;
+    for (uint16_t i = 0; i < phnum; ++i) {
+        size_t ph = phoff + i * 32u;
+        if (rd(ph) != 1) continue;
+        segVaddr.push_back(rd(ph + 8));
+        memEnd = std::max(memEnd, rd(ph + 8) + rd(ph + 20));
+    }
+    if (segVaddr.empty()) return false;
+    std::memset(hostPtr(base), 0, memEnd);
+    for (uint16_t i = 0; i < phnum; ++i) {
+        size_t ph = phoff + i * 32u;
+        if (rd(ph) == 1) std::memcpy(hostPtr(base + rd(ph + 8)), &elf[rd(ph + 4)], rd(ph + 16));
+    }
+    // Relocations: identical algorithm to tools/recomp/pspelf.py. The info word holds the type,
+    // the segment the offset is relative to and the segment whose address is added.
+    auto seg = [&](uint32_t k) { return k < segVaddr.size() ? segVaddr[k] : 0u; };
     std::vector<uint32_t> pendingHi;
     for (uint16_t i = 0; i < shnum; ++i) {
         size_t sh = shoff + i * 40u;
@@ -718,12 +785,13 @@ static bool loadModule(const std::vector<uint8_t>& elf, uint32_t base, uint32_t&
         uint32_t off = rd(sh + 16), size = rd(sh + 20);
         for (uint32_t k = 0; k < size; k += 8) {
             uint32_t at = rd(off + k), info = rd(off + k + 4), type = info & 0xFF;
-            uint32_t addr = base + at;
+            uint32_t addr = base + seg((info >> 8) & 0xFF) + at;
+            uint32_t rbase = base + seg((info >> 16) & 0xFF);
             uint32_t w = read32(addr);
             switch (type) {
-            case 2: write32(addr, w + base); break;
+            case 2: write32(addr, w + rbase); break;
             case 4: {
-                uint32_t target = ((w & 0x03FFFFFF) << 2) + base;
+                uint32_t target = ((w & 0x03FFFFFF) << 2) + rbase;
                 write32(addr, (w & 0xFC000000) | ((target >> 2) & 0x03FFFFFF));
                 break;
             }
@@ -732,19 +800,19 @@ static bool loadModule(const std::vector<uint8_t>& elf, uint32_t base, uint32_t&
                 int32_t slo = (int16_t)(w & 0xFFFF);
                 for (uint32_t h : pendingHi) {
                     uint32_t hw = read32(h);
-                    uint32_t full = ((hw & 0xFFFF) << 16) + (uint32_t)slo + base;
+                    uint32_t full = ((hw & 0xFFFF) << 16) + (uint32_t)slo + rbase;
                     uint32_t newhi = ((full - (uint32_t)(int32_t)(int16_t)(full & 0xFFFF)) >> 16) & 0xFFFF;
                     write32(h, (hw & 0xFFFF0000) | newhi);
                 }
                 pendingHi.clear();
-                write32(addr, (w & 0xFFFF0000) | ((w + base) & 0xFFFF));
+                write32(addr, (w & 0xFFFF0000) | ((w + rbase) & 0xFFFF));
                 break;
             }
             default: break;
             }
         }
     }
-    entry = base + rd(24);
+    entry = rd(24) == 0xFFFFFFFFu ? 0 : base + rd(24);
     // .rodata.sceModuleInfo: u16 attr, u16 ver, char name[28], u32 gp, ...
     gp = 0;
     uint32_t shstr = rd(shoff + rd16(50) * 40u + 16);
@@ -753,8 +821,31 @@ static bool loadModule(const std::vector<uint8_t>& elf, uint32_t base, uint32_t&
         const char* nm = reinterpret_cast<const char*>(&elf[shstr + rd(sh)]);
         if (std::strcmp(nm, ".rodata.sceModuleInfo") == 0) gp = read32(base + rd(sh + 12) + 32);
     }
-    end = base + segMem;
+    end = base + memEnd;
     return true;
+}
+
+// Modules recompiled with BOOT.BIN (tools/recomp/games/<disc id>/modules.tsv): loaded from the
+// disc at their fixed base when the game asks for them.
+static const ExtraModule* findExtraModule(const std::string& path) {
+    auto lower = [](std::string s) { for (char& ch : s) ch = (char)std::tolower((unsigned char)ch); return s; };
+    std::string p = lower(path);
+    for (unsigned i = 0; i < g_extra_module_count; ++i)
+        if (lower(g_extra_modules[i].path) == p) return &g_extra_modules[i];
+    return nullptr;
+}
+
+static bool loadExtraModule(const ExtraModule& m) {
+    IsoEntry e;
+    std::string p = m.path;
+    if (p.compare(0, 6, "disc0:") == 0) p = p.substr(6);
+    if (!g_iso.lookup(p, e)) return false;
+    std::vector<uint8_t> elf(e.size);
+    g_iso.read(e.lba, 0, elf.data(), e.size);
+    uint32_t entry = 0, gp = 0, end = 0;
+    if (!loadModule(elf, m.base, entry, gp, end)) return false;
+    log("module %s loaded at %08x-%08x (recompiled)", m.path, m.base, end);
+    return end - m.base <= m.size;
 }
 
 static std::atomic<bool> g_exitRequested{false};
@@ -787,6 +878,8 @@ int boot(const BootOptions& opt) {
     g_userPartition.init(kUserRam, kRamEnd);
     g_userPartition.reserve(kUserRam, 0x4000);              // loader area below the module
     g_userPartition.reserve(g_module_base, end - g_module_base);
+    for (unsigned i = 0; i < g_extra_module_count; ++i)
+        g_userPartition.reserve(g_extra_modules[i].base, (g_extra_modules[i].size + 0xFFFF) & ~0xFFFFu);
     // Interrupt handler stack in kernel RAM (not visible to the game's allocations).
     g_intrStackTop = kKernelRam + 0x00400000;
 
@@ -803,6 +896,7 @@ int boot(const BootOptions& opt) {
         mainThread = createThread("user_main", entry, 0x20, 0x40000, 0x80000000);
         startThread(mainThread, (uint32_t)std::strlen(path) + 1, argAddr);
     }
+    std::thread(preemptionTimer).detach();
     // This host thread becomes the idle/scheduler loop until the game exits.
     {
         std::unique_lock<std::mutex> lk(g_km);
@@ -828,6 +922,30 @@ struct Fpl {
     std::vector<bool> used;
 };
 static std::map<int, Fpl> g_fpls;
+
+struct Vpl {
+    std::string name;
+    uint32_t base = 0, size = 0, attr = 0;
+    int block = 0;
+    std::map<uint32_t, uint32_t> blocks; // address -> size (8-byte header included like the PSP)
+    uint32_t alloc(uint32_t n) {
+        n = ((n + 7) & ~7u) + 8;
+        uint32_t a = base;
+        for (auto& [addr, sz] : blocks) {
+            if (addr - 8 - a >= n) break;
+            a = addr - 8 + sz;
+        }
+        if (a + n > base + size) return 0;
+        blocks[a + 8] = n;
+        return a + 8;
+    }
+    uint32_t freeBytes() const {
+        uint32_t used = 0;
+        for (auto& [a, sz] : blocks) used += sz;
+        return size - used;
+    }
+};
+static std::map<int, Vpl> g_vpls;
 
 struct VTimer {
     bool running = false;
@@ -1055,8 +1173,9 @@ static void registerCoreHle() {
             bool hit = (mode & 1) ? (p & bits) != 0 : (p & bits) == bits; // bit0: OR wait
             if (!hit) return false;
             matched = p;
-            if (mode & 0x20) it->second.pattern = 0;          // clear all
-            else if (mode & 0x10) it->second.pattern &= ~bits; // clear matched bits
+            // PSP_EVENT_WAITCLEAR (0x20): clear the waited bits; PSP_EVENT_WAITCLEARALL (0x10): clear all
+            if (mode & 0x20) it->second.pattern &= ~bits;
+            if (mode & 0x10) it->second.pattern = 0;
             return true;
         }, readTimeout(tptr));
         if (!exists) { ret(c, ERR_UNKNOWN_EVFID); return; }
@@ -1127,6 +1246,10 @@ static void registerCoreHle() {
         // the HLE layer itself; report success with a fake module id. Their module info
         // (name, version) is still read, as some HLE modules depend on the library version.
         std::string path = readString(A(c, 0));
+        if (const ExtraModule* m = findExtraModule(path)) {
+            ret(c, loadExtraModule(*m) ? (uint32_t)newUid() : 0x80020146u); // SCE_KERNEL_ERROR_FILEERR
+            return;
+        }
         std::string name;
         int version = readModuleInfo(path, name);
         log("LoadModule(%s) -> HLE (%s, version %04x)", path.c_str(), name.c_str(), version);
@@ -1316,18 +1439,126 @@ static void registerCoreHle() {
         c->r[3] = (uint32_t)(old >> 32);
     });
 
+    HLE(sceKernelWaitEventFlagCB) {
+        int id = (int)A(c, 0);
+        uint32_t bits = A(c, 1), mode = A(c, 2), outp = A(c, 3), tptr = A(c, 4);
+        if (bits == 0) { ret(c, ERR_EVF_ILPAT); return; }
+        bool exists = true;
+        uint32_t matched = 0;
+        runCallbacks();
+        bool ok = waitUntil([id, bits, mode, &exists, &matched] {
+            auto it = g_evfs.find(id);
+            if (it == g_evfs.end()) { exists = false; return true; }
+            uint32_t p = it->second.pattern;
+            bool hit = (mode & 1) ? (p & bits) != 0 : (p & bits) == bits;
+            if (!hit) return false;
+            matched = p;
+            if (mode & 0x20) it->second.pattern &= ~bits;
+            if (mode & 0x10) it->second.pattern = 0;
+            return true;
+        }, readTimeout(tptr), true);
+        runCallbacks();
+        if (!exists) { ret(c, ERR_UNKNOWN_EVFID); return; }
+        if (outp) write32(outp, matched);
+        if (!ok) { if (tptr) write32(tptr, 0); ret(c, ERR_WAIT_TIMEOUT); return; }
+        ret(c, 0);
+    });
+    HLE(sceKernelReferEventFlagStatus) { // SceKernelEventFlagInfo: size, name[32], attr, init, current, waiters
+        std::lock_guard<std::mutex> lk(g_km);
+        auto it = g_evfs.find((int)A(c, 0));
+        if (it == g_evfs.end()) { ret(c, ERR_UNKNOWN_EVFID); return; }
+        uint32_t info = A(c, 1), size = read32(info);
+        uint32_t f[13] = {};
+        f[0] = size;
+        std::strncpy(reinterpret_cast<char*>(&f[1]), it->second.name.c_str(), 31);
+        f[9] = it->second.attr;
+        f[10] = it->second.pattern;
+        f[11] = it->second.pattern;
+        f[12] = (uint32_t)it->second.waiters;
+        for (uint32_t i = 0; i < 13 && i * 4 < size; ++i) write32(info + i * 4, f[i]);
+        ret(c, 0);
+    });
+    HLE(sceKernelWaitThreadEndCB) {
+        int id = (int)A(c, 0);
+        uint32_t tptr = A(c, 1);
+        runCallbacks();
+        bool ok = waitUntil([id] {
+            Thread* t = findThread(id);
+            return !t || t->state == TState::Dead || t->state == TState::Dormant;
+        }, readTimeout(tptr), true);
+        runCallbacks();
+        if (!ok) { ret(c, ERR_WAIT_TIMEOUT); return; }
+        std::lock_guard<std::mutex> lk(g_km);
+        Thread* t = findThread(id);
+        ret(c, t ? (uint32_t)t->exitStatus : ERR_UNKNOWN_THID);
+    });
+
+    // Variable-size memory pools (Vpl): first-fit blocks inside one partition block.
+    HLE(sceKernelCreateVpl) {
+        std::lock_guard<std::mutex> lk(g_km);
+        uint32_t attr = A(c, 2), size = (A(c, 3) + 7) & ~7u;
+        int block = 0;
+        uint32_t base = g_userPartition.alloc(size, (attr & 0x4000) ? 1 : 0, 0, 256, &block);
+        if (!base) { ret(c, ERR_NO_MEMORY); return; }
+        int id = newUid();
+        Vpl& v = g_vpls[id];
+        v.name = readString(A(c, 0), 32);
+        v.base = base; v.size = size; v.block = block; v.attr = attr;
+        log("CreateVpl('%s', %u bytes) -> %d @%08x", v.name.c_str(), size, id, base);
+        ret(c, (uint32_t)id);
+    });
+    HLE(sceKernelDeleteVpl) {
+        std::lock_guard<std::mutex> lk(g_km);
+        auto it = g_vpls.find((int)A(c, 0));
+        if (it == g_vpls.end()) { ret(c, 0x8002019C); return; } // SCE_KERNEL_ERROR_UNKNOWN_VPLID
+        g_userPartition.free(it->second.block);
+        g_vpls.erase(it);
+        ret(c, 0);
+    });
+    HLE(sceKernelTryAllocateVpl) {
+        std::lock_guard<std::mutex> lk(g_km);
+        auto it = g_vpls.find((int)A(c, 0));
+        if (it == g_vpls.end()) { ret(c, 0x8002019C); return; }
+        uint32_t a = it->second.alloc(A(c, 1));
+        if (!a) { ret(c, 0x800201B0); return; } // SCE_KERNEL_ERROR_NO_MEMORY for pools
+        write32(A(c, 2), a);
+        ret(c, 0);
+    });
+    HLE(sceKernelFreeVpl) {
+        std::lock_guard<std::mutex> lk(g_km);
+        auto it = g_vpls.find((int)A(c, 0));
+        if (it == g_vpls.end()) { ret(c, 0x8002019C); return; }
+        ret(c, it->second.blocks.erase(A(c, 1)) ? 0 : 0x800201B4); // SCE_KERNEL_ERROR_ILLEGAL_MEMBLOCK
+    });
+    HLE(sceKernelReferVplStatus) { // SceKernelVplInfo: size, name[32], attr, poolSize, freeSize, waiters
+        std::lock_guard<std::mutex> lk(g_km);
+        auto it = g_vpls.find((int)A(c, 0));
+        if (it == g_vpls.end()) { ret(c, 0x8002019C); return; }
+        uint32_t info = A(c, 1), size = read32(info);
+        uint32_t f[13] = {};
+        f[0] = size;
+        std::strncpy(reinterpret_cast<char*>(&f[1]), it->second.name.c_str(), 31);
+        f[9] = it->second.attr;
+        f[10] = it->second.size;
+        f[11] = it->second.freeBytes();
+        for (uint32_t i = 0; i < 13 && i * 4 < size; ++i) write32(info + i * 4, f[i]);
+        ret(c, 0);
+    });
+
     extern void registerIoHle();
     extern void registerDeviceHle();
     extern void registerSasHle();
     extern void registerMpegHle();
     extern void registerUtilityHle();
     extern void registerAtracHle();
+    extern void registerPsmfHle();
     registerIoHle();
     registerDeviceHle();
     registerSasHle();
     registerMpegHle();
     registerUtilityHle();
     registerAtracHle();
+    registerPsmfHle();
 }
 
 } // namespace psp::kernel

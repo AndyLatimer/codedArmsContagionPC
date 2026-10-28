@@ -254,6 +254,7 @@ void registerDeviceHle() {
         c->r[3] = (uint32_t)(us >> 32);
     });
     registerHle("sceUmdWaitDriveStatCB", [](Ctx* c) { runPendingCallbacks(); ret(c, 0); });
+    registerHle("sceUmdCancelWaitDriveStat", [](Ctx* c) { ret(c, 0); });
 
     // ---- sceUtility: see hle_utility.cpp
 

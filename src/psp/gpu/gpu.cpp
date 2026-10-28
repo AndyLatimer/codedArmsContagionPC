@@ -11,6 +11,7 @@
 #include <cstring>
 #include <deque>
 #include <map>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -334,6 +335,16 @@ private:
                 dst[y * w + x] = c;
             }
         }
+        if (const char* d = std::getenv("CA_DUMP_UPLOAD")) { // debugging: CPU data uploaded into a framebuffer
+            static int n = 0;
+            if (n++ % 30 == 0) {
+                char path[256];
+                std::snprintf(path, sizeof path, "%s/upload_%08x_%04d.png", d, 0x04000000 | f.key, n);
+                std::vector<uint32_t> opaque(dst, dst + (size_t)w * h);
+                for (uint32_t& p : opaque) p |= 0xFF000000u;
+                stbi_write_png(path, w, h, 4, opaque.data(), w * 4);
+            }
+        }
         frame_->ops.push_back(op);
     }
 
@@ -470,6 +481,13 @@ void Recorder::transfer(uint32_t data) {
 
     auto srcFbo = isVram(src) ? fbos_.find(vramKey(src)) : fbos_.end();
     auto dstFbo = isVram(dst) ? fbos_.find(vramKey(dst)) : fbos_.end();
+    if (std::getenv("CA_GPU_XFER")) { // debugging: block transfers
+        static std::set<std::string> seen;
+        char b[160];
+        std::snprintf(b, sizeof b, "%08x(%d,%d)/%u -> %08x(%d,%d)/%u %dx%d bpp %u fbo %d/%d", src, sx, sy, srcStride, dst, dx, dy, dstStride, w,
+                      h, bpp, srcFbo != fbos_.end(), dstFbo != fbos_.end());
+        if (seen.insert(b).second) std::fprintf(stderr, "[GPU] transfer %s\n", b);
+    }
     if (srcFbo != fbos_.end() && dstFbo != fbos_.end() && srcFbo->second.created && dstFbo->second.created) {
         Op op{OP_BLIT_FBO};
         op.id = srcFbo->second.id;
@@ -726,6 +744,11 @@ bool Recorder::setupTexture(GlState& st, Ubo& u, const FboInfo& target) {
     st.wrapT = (reg(CMD_TEXWRAP) & 0x100) ? GL_CLAMP_TO_EDGE : GL_REPEAT;
 
     // Render-to-texture: the texture is a framebuffer we rendered.
+    if (isVram(addr) && std::getenv("CA_GPU_XFER")) {
+        static std::set<uint32_t> seen;
+        if (seen.insert(addr ^ (format << 28)).second)
+            std::fprintf(stderr, "[GPU] VRAM texture %08x fmt %u %dx%d fbo %d\n", addr, format, w, h, (int)(fbos_.find(vramKey(addr)) != fbos_.end()));
+    }
     if (isVram(addr) && format <= TFMT_8888) {
         auto it = fbos_.find(vramKey(addr));
         if (it != fbos_.end() && it->second.created) {
@@ -1249,6 +1272,7 @@ struct Exec {
     GLuint feedbackTex = 0;
     int feedbackW = 0, feedbackH = 0;
     int bound = 0;
+    int target = -1; // the last OP_BIND_FBO: uploads, clears and blits unbind it mid-frame
     PresentInfo last;
     int lastFbo = 0;
 } g_exec;
@@ -1415,6 +1439,11 @@ void debugFrame(const Frame& fr) {
                          op.glMode, op.count, op.st.texKind, op.st.texId, u.vpScale[3], u.texFlags[2], op.st.scissor[0], op.st.scissor[1],
                          op.st.scissor[2], op.st.scissor[3], u.offsetFb[2], u.offsetFb[3], v[0], v[1], v[2], v[6], v[7], v[8], v[9], v[10], v[11],
                          op.st.colorMask[0], op.st.colorMask[1], op.st.colorMask[2], op.st.colorMask[3], op.st.blend, op.st.depthTest, op.st.depthFunc);
+            if (full && std::getenv("CA_GPU_VERTS"))
+                for (size_t k = 0; k < op.count && k < 8; ++k) {
+                    const float* w = &fr.verts[(op.first + k) * kFloatsPerVertex];
+                    std::fprintf(stderr, "     v%zu pos=(%g,%g,%g) uv=(%g,%g) texSize=(%g,%g,%g,%g)\n", k, w[0], w[1], w[2], w[6], w[7], u.texSize[0], u.texSize[1], u.texSize[2], u.texSize[3]);
+                }
             if (full)
                 std::fprintf(stderr, "     stencil=%d func=%x ref=%d mask=%x ops=%x/%x/%x wr=%x aconst=%d(%g) blend src=%x dst=%x eq=%x const=(%g,%g,%g) premul=%g texfunc=%g alphaUse=%g dbl=%g alphatest=%g/%g/%g fog=%g light=%g\n",
                              op.st.stencil, op.st.stencilFunc, op.st.stencilRef, op.st.stencilMask, op.st.sfail, op.st.zfail, op.st.zpass, op.st.stencilWrite, op.st.alphaConst, op.st.blendColor[3],
@@ -1436,6 +1465,7 @@ void execFrame(Frame& fr, PresentInfo& pinfo, bool& presented) {
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(fr.verts.size() * sizeof(float)), fr.verts.data(), GL_STREAM_DRAW);
     glUseProgram(g_exec.program);
     g_exec.bound = -1;
+    g_exec.target = -1;
     int drawIndex = 0;
     for (Op& op : fr.ops) {
         if (op.type == OP_DRAW && g_maxDraws >= 0 && drawIndex++ >= g_maxDraws) continue;
@@ -1446,7 +1476,7 @@ void execFrame(Frame& fr, PresentInfo& pinfo, bool& presented) {
             if (f.w != op.w || f.h != op.h || !f.fbo) createFbo(f, op.w, op.h);
             break;
         }
-        case OP_BIND_FBO: bindTarget(op.id); break;
+        case OP_BIND_FBO: bindTarget(op.id); g_exec.target = op.id; break;
         case OP_CLEAR_FBO: {
             auto it = g_exec.fbos.find(op.id);
             if (it == g_exec.fbos.end()) break;
@@ -1489,6 +1519,12 @@ void execFrame(Frame& fr, PresentInfo& pinfo, bool& presented) {
             glColorMask(1, 1, 1, 1);
             const int s = std::max(1, g_settings.scale);
             glBlitFramebuffer(0, 0, op.w, op.h, op.x * s, op.y * s, (op.x + op.w) * s, (op.y + op.h) * s, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            if (std::getenv("CA_GPU_XFER")) {
+                static int n = 0;
+                GLenum e = glGetError();
+                GLenum rs = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER), ds = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+                if (n++ < 5) std::fprintf(stderr, "[GPU] upload fbo %d %dx%d: gl error %x, read %x draw %x\n", op.id, op.w, op.h, e, rs, ds);
+            }
             glDeleteFramebuffers(1, &tmp);
             glDeleteTextures(1, &tex);
             g_exec.bound = -1;
@@ -1508,6 +1544,9 @@ void execFrame(Frame& fr, PresentInfo& pinfo, bool& presented) {
             break;
         }
         case OP_DRAW: {
+            // A framebuffer upload (CPU-written VRAM sampled as a texture, e.g. Contagion's
+            // movie frames) between a bind and its draws leaves no target bound: restore it.
+            if (g_exec.bound <= 0 && g_exec.target > 0) bindTarget(g_exec.target);
             if (g_exec.bound <= 0) break;
             GlFbo& target = g_exec.fbos[g_exec.bound];
             GLuint tex = op.st.texKind ? textureFor(op.st) : 0;

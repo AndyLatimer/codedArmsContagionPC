@@ -1,0 +1,5 @@
+# Modules of Coded Arms: Contagion recompiled together with BOOT.BIN: path on the disc, then
+# the fixed address the port loads it at (reserved at the top of user RAM at boot; the PSP
+# would place it in free memory when the game calls sceKernelLoadModule).
+# PSMF_JK.PRX is Konami's movie player ("jkPsmfPlayer"); its API is not Sony's scePsmfPlayer.
+PSP_GAME/USRDIR/MODULE/PSMF_JK.PRX	09fe0000

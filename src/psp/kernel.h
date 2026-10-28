@@ -57,6 +57,8 @@ void setPaused(bool paused);
 int currentThreadId();
 // Crash reports: the current guest thread and its last system call.
 void describeCrash(FILE* out);
+// Debugging: logs every guest thread with its state and last system call.
+void dumpThreads();
 // Blocks the calling guest thread until `ready()` returns true or `timeoutUs` (0 = none)
 // elapses. `ready` is evaluated under the kernel lock. Returns false on timeout.
 bool waitUntil(const std::function<bool()>& ready, uint64_t timeoutUs, bool processCallbacks = false);

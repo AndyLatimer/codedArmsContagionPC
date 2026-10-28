@@ -4,20 +4,30 @@ Produces the relocated memory image exactly as the PSP module loader would at a 
 base address, plus the metadata the recompiler needs: section ranges, every relocated
 word (which tells code addresses apart from data), imports (stubs) and the module entry.
 
-Only what BOOT.BIN of ULES-00124 actually uses is implemented (verified by counting):
-one PT_LOAD segment, SHT_PSP_REL (0x700000A0) sections with relocation types
-R_MIPS_32 (2), R_MIPS_26 (4), R_MIPS_HI16 (5) and R_MIPS_LO16 (6), segment index 0.
+Only what the modules this port recompiles use is implemented (verified by counting):
+SHT_PSP_REL (0x700000A0) sections with relocation types R_MIPS_32 (2), R_MIPS_26 (4),
+R_MIPS_HI16 (5) and R_MIPS_LO16 (6). BOOT.BIN (CA1 and Contagion) has one PT_LOAD segment;
+Contagion's PSMF_JK.PRX has two (code at vaddr 0, data after it) and relocations whose
+address is relative to the second one (the "address base" segment index in the info word).
 """
 import struct
 
 SHT_PSP_REL = 0x700000A0
 R_MIPS_32, R_MIPS_26, R_MIPS_HI16, R_MIPS_LO16 = 2, 4, 5, 6
 DEFAULT_BASE = 0x08804000  # standard load address of the first user module
+MODULE_START_NID = 0xD632ACDB
 
 
 class Section:
     def __init__(self, name, type_, addr, offset, size):
         self.name, self.type, self.addr, self.offset, self.size = name, type_, addr, offset, size
+
+
+class Export:
+    """One exported function: library name ("" for the module's own syslib), NID, address."""
+
+    def __init__(self, lib, nid, addr):
+        self.lib, self.nid, self.addr = lib, nid, addr
 
 
 class Stub:
@@ -35,6 +45,7 @@ class PspModule:
         self._load_segment()
         self._relocate()
         self._parse_imports()
+        self._parse_exports()
         self._find_code_ranges()
 
     # -- headers -----------------------------------------------------------------------
@@ -46,10 +57,13 @@ class PspModule:
          shstrndx) = struct.unpack_from("<HHIIIIIHHHHHH", d, 16)
         if self.e_type != 0xFFA0 or mach != 8:
             raise ValueError("unexpected ELF type %#x / machine %d" % (self.e_type, mach))
-        if phnum != 1:
-            raise ValueError("only single-segment modules are supported (found %d)" % phnum)
-        (_, self.seg_offset, self.seg_vaddr, _, self.seg_filesz, self.seg_memsz, _,
-         _) = struct.unpack_from("<8I", d, phoff)
+        self.segments = []  # (vaddr, file offset, filesz, memsz) of each PT_LOAD
+        for i in range(phnum):
+            (ptype, off, vaddr, _, filesz, memsz, _, _) = struct.unpack_from("<8I", d, phoff + i * 32)
+            if ptype == 1:
+                self.segments.append((vaddr, off, filesz, memsz))
+        if not self.segments:
+            raise ValueError("no PT_LOAD segment")
         raw_secs = [struct.unpack_from("<10I", d, shoff + i * 40) for i in range(shnum)]
         strtab = raw_secs[shstrndx]
 
@@ -67,11 +81,13 @@ class PspModule:
 
     # -- image -------------------------------------------------------------------------
     def _load_segment(self):
-        img = bytearray(self.seg_memsz)
-        img[: self.seg_filesz] = self.raw[self.seg_offset: self.seg_offset + self.seg_filesz]
-        self.image = img  # index = vaddr (segment vaddr is 0)
-        if self.seg_vaddr != 0:
-            raise ValueError("segment vaddr %#x != 0" % self.seg_vaddr)
+        if self.segments[0][0] != 0:
+            raise ValueError("first segment vaddr %#x != 0" % self.segments[0][0])
+        img = bytearray(max(v + m for v, _, _, m in self.segments))
+        for vaddr, off, filesz, _ in self.segments:
+            img[vaddr: vaddr + filesz] = self.raw[off: off + filesz]
+        self.image = img  # index = vaddr
+        self.seg_memsz = len(img)
 
     def word(self, vaddr):
         return struct.unpack_from("<I", self.image, vaddr)[0]
@@ -81,20 +97,21 @@ class PspModule:
 
     def _relocate(self):
         """Applies relocations. Records every relocated location and its type in
-        self.relocs {vaddr: type} so the recompiler knows which words hold addresses."""
+        self.relocs {vaddr: type} so the recompiler knows which words hold addresses.
+        The info word holds the type, the segment the offset is relative to and the segment
+        whose (loaded) address is added."""
         entries = []
         for s in self.sections:
             if s.type == SHT_PSP_REL:
                 for i in range(0, s.size, 8):
                     off, info = struct.unpack_from("<II", self.raw, s.offset + i)
-                    if (info >> 8) & 0xFF or (info >> 16) & 0xFF:
-                        raise ValueError("relocation against segment != 0")
-                    entries.append((off, info & 0xFF))
+                    ofs_seg, addr_seg = (info >> 8) & 0xFF, (info >> 16) & 0xFF
+                    entries.append((self.segments[ofs_seg][0] + off, info & 0xFF, self.segments[addr_seg][0]))
         self.relocs = {}
         self.hilo_values = set()  # full addresses built by relocated lui/addiu (or lw) pairs
-        base = self.base
         pending_hi = []
-        for off, typ in entries:
+        for off, typ, seg_vaddr in entries:
+            base = self.base + seg_vaddr
             self.relocs[off] = typ
             w = self.word(off)
             if typ == R_MIPS_32:
@@ -138,6 +155,30 @@ class PspModule:
                 self.stubs.append(Stub(lib, nid, funcs_p + i * 8))
             a += entlen * 4
 
+    def _parse_exports(self):
+        """.lib.ent: {u32 name, u16 version, u16 attr, u8 len (words), u8 vcount, u16 fcount,
+        u32 table}; the table holds fcount + vcount NIDs, then as many addresses."""
+        self.exports = []
+        try:
+            ent = self.section(".lib.ent")
+        except KeyError:
+            return
+        a = ent.addr
+        while a < ent.addr + ent.size:
+            name_p, _, _, entlen, vcount, fcount, table = struct.unpack_from("<IHHBBHI", self.image, a)
+            lib = self._cstr(name_p - self.base) if name_p else ""
+            n = fcount + vcount
+            for i in range(fcount):
+                nid = self.word(table - self.base + i * 4)
+                self.exports.append(Export(lib, nid, self.word(table - self.base + (n + i) * 4)))
+            a += max(entlen, 4) * 4
+
+    def export(self, nid, lib=None):
+        for e in self.exports:
+            if e.nid == nid and (lib is None or e.lib == lib):
+                return e.addr
+        return None
+
     def _find_code_ranges(self):
         """Code lives in .text and, for this compiler, also inside .data: static
         initialisers (C++ constructors) followed by the table of pointers to them.
@@ -167,7 +208,11 @@ class PspModule:
 
     @property
     def entry(self):
-        return self.e_entry + self.base
+        """The module's start function: e_entry, or the syslib's module_start export when the
+        header has none (0xFFFFFFFF, as in PSMF_JK.PRX)."""
+        if self.e_entry != 0xFFFFFFFF:
+            return self.e_entry + self.base
+        return self.export(MODULE_START_NID, "")  # None: the module has no start function
 
     def bytes_at(self, vaddr, n):
         return bytes(self.image[vaddr - self.base: vaddr - self.base + n])

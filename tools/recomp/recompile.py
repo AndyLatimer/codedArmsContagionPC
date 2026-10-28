@@ -36,8 +36,21 @@ def main():
         ap.error("--iso or --elf is required")
     mod = PspModule(data)
     funcs, starts = functions.discover(mod)
+    modules = [(mod, funcs, starts, "")]
+    # Further modules of the game recompiled with it (games/<disc id>/modules.tsv: path on the
+    # disc, load address). They must come from the disc image.
+    table = os.path.join(os.path.dirname(os.path.abspath(__file__)), "games", codegen.GAME_ID, "modules.tsv")
+    if args.iso and os.path.exists(table):
+        for line in open(table):
+            line = line.split("#", 1)[0].split()
+            if len(line) < 2:
+                continue
+            m = PspModule(read_iso_file(args.iso, line[0]), base=int(line[1], 16))
+            mf, ms = functions.discover(m)
+            modules.append((m, mf, ms, "disc0:/" + line[0]))
+            print("module %s at %08x: functions: %d, imports: %d, exports: %d" % (line[0], m.base, len(mf), len(m.stubs), len(m.exports)))
     trace = list(funcs) if args.trace == "all" else [int(x, 16) for x in args.trace.split(",") if x]
-    gen, files = codegen.generate(mod, funcs, starts, args.out, trace=trace, watch=args.watch, profile=args.profile)
+    gen, files = codegen.generate_modules(modules, args.out, trace=trace, watch=args.watch, profile=args.profile)
     print("functions: %d, files: %d, imports: %d" % (len(funcs), len(files), len(mod.stubs)))
     if gen.unhandled:
         print("UNHANDLED mnemonics:", gen.unhandled)

@@ -25,11 +25,15 @@ typedef struct Ctx {
 typedef void (*GuestFn)(Ctx*);
 typedef struct { uint32_t addr; GuestFn fn; } GuestFunc;
 typedef struct { const char* lib; uint32_t nid; uint32_t stub; } HleImport;
+// A further module recompiled with the main one: loaded at `base` by sceKernelLoadModule.
+typedef struct { const char* path; uint32_t base, size, start; } ExtraModule;
 
 /* Provided by the generated table.c */
 extern const GuestFunc g_guest_funcs[];
 extern const unsigned g_guest_func_count;
 extern const HleImport g_hle_imports[];
+extern const ExtraModule g_extra_modules[];
+extern const unsigned g_extra_module_count;
 extern const unsigned g_hle_import_count;
 extern const uint32_t g_module_base, g_module_entry;
 
@@ -52,6 +56,13 @@ static inline void wr16_(uint8_t* p, uint16_t v) { memcpy(p, &v, 2); }
 #define WR32(a, v) wr32_(HOST(a), (uint32_t)(v))
 
 void rt_watch_store(Ctx* c, uint32_t pc, uint32_t addr);
+/* Preemption: guest threads only switch at system calls, so a loop that waits for another
+ * thread without making one would never let it run. Every backward jump polls this flag; the
+ * kernel's timer sets it when a higher-priority thread became ready (or an interrupt is due),
+ * as the PSP's timer interrupt would. */
+extern volatile int rt_preempt_flag;
+void rt_preempt(Ctx* c);
+#define RT_POLL() do { if (__builtin_expect(rt_preempt_flag, 0)) rt_preempt(c); } while (0)
 // Profile build (CA_RECOMP_PROFILE): calls per function, indexed by (address - text base) / 4.
 extern uint32_t g_prof_counts[];
 #define RT_PROF(a) (++g_prof_counts[((a) - 0x08804000u) >> 2])

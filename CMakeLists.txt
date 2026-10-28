@@ -115,6 +115,7 @@ if(NOT MSVC)
 endif()
 target_sources(ca_psp PRIVATE
   src/psp/hle_mpeg.cpp
+  src/psp/hle_psmf.cpp
   src/psp/ppsspp/MediaEngine.cpp
   src/psp/ppsspp/MpegDemux.cpp
   src/psp/ppsspp/Atrac3Standalone.cpp)

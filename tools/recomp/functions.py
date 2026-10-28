@@ -43,13 +43,15 @@ def discover(mod):
                 return r1
         return a
 
-    starts = {mod.entry}
+    starts = {mod.entry} if mod.entry is not None else set()
     for off, typ in mod.relocs.items():
         if typ == R_MIPS_26 and in_text(off + base):
             w = mod.word(off)
             if w >> 26 == 3:  # jal
                 starts.add(((off + base + 4) & 0xF0000000) | ((w & 0x03FFFFFF) << 2))
     starts |= {r0 for r0, _ in ranges}
+    # Exported functions (a module's library: PSMF_JK.PRX's jkPsmfPlayer, BOOT.BIN's sceLibc).
+    starts |= {e.addr for e in getattr(mod, "exports", ()) if in_text(e.addr)}
     # Code pointers stored in data, or built in code with relocated lui/addiu pairs.
     code_ptrs = set()
     for off, typ in mod.relocs.items():

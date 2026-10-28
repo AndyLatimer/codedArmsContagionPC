@@ -360,6 +360,13 @@ int runWithGl(const psp::kernel::BootOptions& opt, int scale, std::vector<std::p
 }
 
 int main(int argc, char** argv) {
+    if (const char* d = std::getenv("CA_THREAD_DUMP")) { // seconds: log the guest threads then
+        double at = std::atof(d);
+        std::thread([at] {
+            std::this_thread::sleep_for(std::chrono::milliseconds((int)(at * 1000)));
+            psp::kernel::dumpThreads();
+        }).detach();
+    }
     psp::kernel::BootOptions opt;
     if (const char* ms = std::getenv("CA_MEMSTICK")) psp::kernel::g_hostMsRoot = ms;
     int seconds = 0;

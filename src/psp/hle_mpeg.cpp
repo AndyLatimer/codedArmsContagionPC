@@ -1249,6 +1249,80 @@ void mpegNotifyModuleLoaded(const std::string& name, int version) {
 	}
 }
 
+
+// ---- YCbCr decoding path (used by Contagion's movie player, PSMF_JK.PRX) ------------------
+// From PPSSPP: the frame stays in the MediaEngine at DecodeYCbCr and is converted at Csc.
+const int avcCscDelayMs = 4000;
+const int MPEG_PCM_ES_SIZE = 320;
+const int MPEG_PCM_ES_OUTPUT_SIZE = 320;
+const int MPEG_AU_MODE_DECODE = 0;
+const int MPEG_AU_MODE_SKIP = 1;
+constexpr u32 SCE_KERNEL_ERROR_INVALID_VALUE_MPEG = 0x800001FE;
+
+void sceMpegAvcDecodeYCbCr(Ctx* c, u32 mpeg, u32 auAddr, u32 bufferAddr, u32 initAddr) {
+	MpegContext *ctx = getMpegCtx(mpeg);
+	if (!ctx) { ret(c, (u32)-1); return; }
+	SceMpegAu avcAu;
+	avcAu.read(auAddr);
+	SceMpegRingBuffer *ringbuffer = ringPtr(ctx->mpegRingbufferAddr);
+	if (!ringbuffer) { ret(c, (u32)-1); return; }
+	if (ringbuffer->packetsRead == 0 || ctx->mediaengine->IsVideoEnd()) {
+		delayResult(c, SCE_MPEG_ERROR_AVC_DECODE_FATAL, avcEmptyDelayMs);
+		return;
+	}
+	s32 beforeAvail = ringbuffer->packets - ctx->mediaengine->getRemainSize() / 2048;
+	ctx->mediaengine->setVideoStream(avcAu.esBuffer);
+	if (!Memory::IsValidRange(bufferAddr, 4) || !Memory::IsValidRange(initAddr, 4)) { ret(c, (u32)-1); return; }
+	if (ctx->mediaengine->stepVideo(ctx->videoPixelMode)) {
+		ctx->avc.avcFrameStatus = 1;
+		ctx->videoFrameCount++;
+	} else {
+		ctx->avc.avcFrameStatus = 0;
+	}
+	s32 afterAvail = ringbuffer->packets - ctx->mediaengine->getRemainSize() / 2048;
+	if (mpegLibVersion <= 0x0103) ringbuffer->packetsAvail += afterAvail - beforeAvail;
+	else ringbuffer->packetsAvail = afterAvail;
+	avcAu.pts = ctx->mediaengine->getVideoTimeStamp() + ctx->mpegFirstTimestamp;
+	avcAu.write(auAddr);
+	psp::write32(initAddr, mpegLibVersion >= 0x010A ? 1 : (u32)ctx->avc.avcFrameStatus);
+	ctx->avc.avcDecodeResult = MPEG_AVC_DECODE_SUCCESS;
+	delayResult(c, 0, ctx->videoFrameCount <= 1 ? avcFirstDelayMs : avcDecodeDelayMs);
+}
+
+void sceMpegAvcCsc(Ctx* c, u32 mpeg, u32 sourceAddr, u32 rangeAddr, int frameWidth, u32 destAddr) {
+	if (!Memory::IsValidAddress(sourceAddr) || !Memory::IsValidRange(rangeAddr, 16) || !Memory::IsValidAddress(destAddr)) { ret(c, (u32)-1); return; }
+	MpegContext *ctx = getMpegCtx(mpeg);
+	if (!ctx) { ret(c, (u32)-1); return; }
+	if (frameWidth == 0) frameWidth = ctx->defaultFrameWidth ? ctx->defaultFrameWidth : ctx->avc.avcDetailFrameWidth;
+	int x = (int)psp::read32(rangeAddr), y = (int)psp::read32(rangeAddr + 4);
+	int width = (int)psp::read32(rangeAddr + 8), height = (int)psp::read32(rangeAddr + 12);
+	if (x < 0 || y < 0 || width < 0 || height < 0) { ret(c, SCE_KERNEL_ERROR_INVALID_VALUE_MPEG); return; }
+	int destSize = ctx->mediaengine->writeVideoImageWithRange(destAddr, frameWidth, ctx->videoPixelMode, x, y, width, height);
+	psp::gpu::notifyMemoryWrite(destAddr, (uint32_t)std::max(destSize, 0));
+	if (psp::mpeg::verbose()) {
+		uint32_t px = psp::read32(destAddr + (uint32_t)((height / 2) * frameWidth + width / 2) * 4);
+		INFO_LOG(Log::Mpeg, "sceMpegAvcCsc: range %d,%d %dx%d, bufw %d, mode %d -> %d bytes at %08x, centre pixel %08x", x, y, width, height,
+		         frameWidth, ctx->videoPixelMode, destSize, destAddr, px);
+	}
+	delayResult(c, 0, avcCscDelayMs);
+}
+
+u32 sceMpegChangeGetAuMode(u32 mpeg, int streamUid, int mode) {
+	MpegContext *ctx = getMpegCtx(mpeg);
+	if (!ctx || (mode != MPEG_AU_MODE_DECODE && mode != MPEG_AU_MODE_SKIP)) return SCE_MPEG_ERROR_INVALID_VALUE;
+	if (ctx->streamMap.find(streamUid) == ctx->streamMap.end()) return SCE_MPEG_ERROR_INVALID_VALUE;
+	ctx->streamIgnoreMap[streamUid] = (mode == MPEG_AU_MODE_SKIP);
+	return 0;
+}
+
+u32 sceMpegGetPcmAu(u32 mpeg, int streamUid, u32 auAddr, u32 attrAddr) {
+	MpegContext *ctx = getMpegCtx(mpeg);
+	if (!ctx || !ringPtr(ctx->mpegRingbufferAddr)) return (u32)-1;
+	if (ctx->streamMap.find(streamUid) == ctx->streamMap.end()) return (u32)-1;
+	if (Memory::IsValidAddress(attrAddr)) psp::write32(attrAddr, (1 << 7) | 2); // 44.1 kHz, stereo
+	return 0;
+}
+
 void registerMpegHle() {
 	registerHle("sceMpegInit", [](Ctx* c) { clearStack(c, 0x48); sceMpegInit(c); });
 	registerHle("sceMpegFinish", [](Ctx* c) { clearStack(c, 0x18); sceMpegFinish(c); });
@@ -1280,6 +1354,31 @@ void registerMpegHle() {
 	registerHle("sceMpegRingbufferDestruct", [](Ctx* c) { ret(c, sceMpegRingbufferDestruct(A(c, 0))); });
 	registerHle("sceMpegRingbufferPut", [](Ctx* c) { ret(c, sceMpegRingbufferPut(c, A(c, 0), (int)A(c, 1), (int)A(c, 2))); });
 	registerHle("sceMpegRingbufferAvailableSize", [](Ctx* c) { ret(c, (u32)sceMpegRingbufferAvailableSize(A(c, 0))); });
+	// Contagion (PSMF_JK.PRX)
+	registerHle("sceMpegAvcDecodeYCbCr", [](Ctx* c) { sceMpegAvcDecodeYCbCr(c, A(c, 0), A(c, 1), A(c, 2), A(c, 3)); });
+	registerHle("sceMpegAvcDecodeStopYCbCr", [](Ctx* c) {
+		if (Memory::IsValidAddress(A(c, 2))) psp::write32(A(c, 2), 0);
+		ret(c, getMpegCtx(A(c, 0)) ? 0 : (u32)-1);
+	});
+	registerHle("sceMpegAvcDecodeFlush", [](Ctx* c) { ret(c, getMpegCtx(A(c, 0)) ? 0 : (u32)-1); });
+	registerHle("sceMpegAvcQueryYCbCrSize", [](Ctx* c) {
+		u32 width = A(c, 2), height = A(c, 3);
+		if ((width & 15) || (height & 15) || height > 272 || width > 480) { ret(c, SCE_MPEG_ERROR_INVALID_VALUE); return; }
+		if (Memory::IsValidAddress(A(c, 4))) psp::write32(A(c, 4), (width / 2) * (height / 2) * 6 + 128);
+		ret(c, 0);
+	});
+	registerHle("sceMpegAvcInitYCbCr", [](Ctx* c) { ret(c, Memory::IsValidAddress(A(c, 4)) && getMpegCtx(A(c, 0)) ? 0 : (u32)-1); });
+	registerHle("sceMpegAvcCsc", [](Ctx* c) { sceMpegAvcCsc(c, A(c, 0), A(c, 1), A(c, 2), (int)A(c, 3), A(c, 4)); });
+	registerHle("sceMpegAvcCopyYCbCr", [](Ctx* c) { ret(c, getMpegCtx(A(c, 0)) ? 0 : (u32)-1); });
+	registerHle("sceMpegRingbufferQueryPackNum", [](Ctx* c) { ret(c, A(c, 0) / (2048 + 104)); });
+	registerHle("sceMpegGetPcmAu", [](Ctx* c) { ret(c, sceMpegGetPcmAu(A(c, 0), (int)A(c, 1), A(c, 2), A(c, 3))); });
+	registerHle("sceMpegChangeGetAuMode", [](Ctx* c) { ret(c, sceMpegChangeGetAuMode(A(c, 0), (int)A(c, 1), (int)A(c, 2))); });
+	registerHle("sceMpegQueryPcmEsSize", [](Ctx* c) {
+		if (!Memory::IsValidAddress(A(c, 1)) || !Memory::IsValidAddress(A(c, 2)) || !getMpegCtx(A(c, 0))) { ret(c, (u32)-1); return; }
+		psp::write32(A(c, 1), MPEG_PCM_ES_SIZE);
+		psp::write32(A(c, 2), MPEG_PCM_ES_OUTPUT_SIZE);
+		ret(c, 0);
+	});
 }
 
 } // namespace psp::kernel

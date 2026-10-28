@@ -176,6 +176,10 @@ static void checkListChange(uint32_t fn, const char* where) {
     }
 }
 
+// The guest thread for trace lines; the kernel provides it (weak so cpu_diff links without it).
+extern "C" int ca_trace_thread_id() __attribute__((weak));
+static int traceThreadId() { return ca_trace_thread_id ? ca_trace_thread_id() : 0; }
+
 void rt_trace_enter(Ctx* c, uint32_t fn) {
     checkListChange(fn, "enter");
     if (t_depth < 4096) {
@@ -185,8 +189,8 @@ void rt_trace_enter(Ctx* c, uint32_t fn) {
     }
     ++t_depth;
     if (!traceVerbose()) return;
-    std::fprintf(stderr, "[TRACE] -> %08x(a0=%08x a1=%08x a2=%08x a3=%08x) ra=%08x sp=%08x s0=%08x\n", fn, c->r[4], c->r[5],
-                 c->r[6], c->r[7], c->r[31], c->r[29], c->r[16]);
+    std::fprintf(stderr, "[TRACE] t%d %*s-> %08x(a0=%08x a1=%08x a2=%08x a3=%08x) ra=%08x\n", traceThreadId(), t_depth > 40 ? 40 : t_depth, "",
+                 fn, c->r[4], c->r[5], c->r[6], c->r[7], c->r[31]);
     if (const char* l = std::getenv("CA_TRACE_LIST")) { // walk a linked list: "head,nextOffset"
         uint32_t head = (uint32_t)std::strtoul(l, nullptr, 16);
         uint32_t nextOff = (uint32_t)std::strtoul(std::strchr(l, ',') + 1, nullptr, 16);
@@ -218,7 +222,7 @@ void rt_trace_exit(Ctx* c, uint32_t fn) {
             }
     }
     if (traceVerbose()) {
-        std::fprintf(stderr, "[TRACE] <- %08x = %08x\n", fn, c->r[2]);
+        std::fprintf(stderr, "[TRACE] t%d %*s<- %08x = %08x\n", traceThreadId(), t_depth > 40 ? 40 : t_depth, "", fn, c->r[2]);
         if (const char* l = std::getenv("CA_TRACE_LIST")) {
             uint32_t head = (uint32_t)std::strtoul(l, nullptr, 16);
             uint32_t nextOff = (uint32_t)std::strtoul(std::strchr(l, ',') + 1, nullptr, 16);
