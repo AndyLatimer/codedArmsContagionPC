@@ -1,5 +1,5 @@
 // ca_psprun: headless runner for the recompiled game (development tool).
-//   ca_psprun --iso CodedArms.iso [--trace] [--seconds N] [--wav out.wav]
+//   ca_psprun --iso CodedArmsContagion.iso [--trace] [--seconds N] [--wav out.wav]
 //             [--press BUTTON@SECONDS[:HOLD]]... [--memstick DIR] [--gl [--scale N] [--shot SECONDS:FILE.png]...]
 // --gl renders the GE output with OpenGL in a hidden window (works under Xvfb) and --shot
 // saves the presented frame at the given times (for comparison with reference frames).
@@ -407,7 +407,7 @@ int main(int argc, char** argv) {
         }
     }
     if (opt.isoPath.empty()) {
-        std::fprintf(stderr, "usage: ca_psprun --iso CodedArms.iso [--trace] [--seconds N] [--wav out.wav]\n");
+        std::fprintf(stderr, "usage: ca_psprun --iso CodedArmsContagion.iso [--trace] [--seconds N] [--wav out.wav]\n");
         return 2;
     }
     if (seconds > 0) {

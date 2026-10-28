@@ -1,4 +1,4 @@
-// Coded Arms (PC) - native front end for the statically recompiled game.
+// Coded Arms: Contagion (PC) - native front end for the statically recompiled game.
 //
 // The recompiled game code runs on its own threads inside the HLE runtime (src/psp); this
 // file owns the window, the OpenGL context (the GE renderer executes here), keyboard/mouse/
@@ -32,6 +32,10 @@
 #include "psp/kernel.h"
 #include "render/GL.h"
 
+namespace psp::kernel {
+extern std::string g_hostMsRoot; // hle_io.cpp
+}
+
 namespace {
 
 // ---- settings -----------------------------------------------------------------------------
@@ -39,26 +43,30 @@ namespace {
 enum PspInput {
     IN_UP, IN_DOWN, IN_LEFT, IN_RIGHT, IN_CROSS, IN_CIRCLE, IN_SQUARE, IN_TRIANGLE, IN_L, IN_R, IN_START, IN_SELECT,
     IN_STICK_UP, IN_STICK_DOWN, IN_STICK_LEFT, IN_STICK_RIGHT,
-    IN_ADS, // aim down sights (the port's own feature, not a PSP button)
+    IN_ADS,   // aim down sights (the port's own feature, not a PSP button)
+    IN_RUN,   // keyboard movement at full stick (the game runs with the stick pushed all the way)
+    IN_CREEP, // keyboard movement at a slight push (slow, quiet walk; the game has no crouch)
     IN_COUNT
 };
 const char* kInputNames[IN_COUNT] = {"up", "down", "left", "right", "cross", "circle", "square", "triangle",
                                      "l", "r", "start", "select", "stick_up", "stick_down", "stick_left", "stick_right",
-                                     "aim_down_sights"};
+                                     "aim_down_sights", "run", "creep"};
 const uint32_t kInputButtons[12] = {
     psp::host::BTN_UP, psp::host::BTN_DOWN, psp::host::BTN_LEFT, psp::host::BTN_RIGHT, psp::host::BTN_CROSS,
     psp::host::BTN_CIRCLE, psp::host::BTN_SQUARE, psp::host::BTN_TRIANGLE, psp::host::BTN_LTRIGGER,
     psp::host::BTN_RTRIGGER, psp::host::BTN_START, psp::host::BTN_SELECT};
-// Defaults follow the game's control type A: analog = move, triangle/cross/square/circle =
-// look up/look down/turn left/turn right (also driven by the mouse), up = zoom, down = reload,
-// left/right = previous/next weapon, R = attack, L = jump, select = pause, start = map. The
-// right mouse button / left trigger aim down sights; the game's zoom moved to the middle button.
+// Defaults follow the game's control scheme A (its default, Settings > Controls): analog = move
+// and strafe, triangle/cross/square/circle = look up/down/left/right (the mouse and the right
+// stick aim directly instead, game_hooks.cpp), up = toggle scope, down = toggle lock-on, left =
+// change weapon, right = reload, L = jump, R = fire, select = toggle visor, start = pause. In the
+// menus cross confirms and triangle goes back (circle in the system dialogs, so Backspace is
+// both). The right mouse button / left trigger aim down sights.
 const char* kDefaultBindings[IN_COUNT] = {
-    "key:Up, mouse:middle, pad:dpup", "key:Down, key:R, pad:dpdown", "key:Left, key:Q, mouse:wheeldown, pad:dpleft",
-    "key:Right, key:E, mouse:wheelup, pad:dpright", "key:Return, key:K, pad:a", "key:Backspace, key:L, pad:b",
-    "key:J, pad:x", "key:I, pad:y", "key:Space, pad:leftshoulder", "mouse:left, pad:rightshoulder, pad:righttrigger",
-    "key:M, key:Tab, pad:back", "key:Escape, key:P, pad:start", "key:W", "key:S", "key:A", "key:D",
-    "mouse:right, pad:lefttrigger"};
+    "key:Up, mouse:middle, key:Z, pad:dpup", "key:Down, key:Q, pad:dpdown",
+    "key:Left, mouse:wheelup, mouse:wheeldown, key:C, pad:dpleft", "key:Right, key:R, pad:dpright",
+    "key:Return, pad:a", "key:Backspace, pad:b", "pad:x", "key:Backspace, pad:y", "key:Space, pad:leftshoulder",
+    "mouse:left, pad:rightshoulder, pad:righttrigger", "key:Escape, key:P, pad:start", "key:Tab, key:V, pad:back",
+    "key:W", "key:S", "key:A", "key:D", "mouse:right, pad:lefttrigger", "key:Left Shift", "key:Left Ctrl"};
 
 struct FrontSettings {
     std::string iso;
@@ -80,6 +88,7 @@ struct FrontSettings {
     std::string devLoadout = "0, 4, 6, 19, 23"; // the five weapons levels start with (ids, see LEEME)
     float volume = 1.0f;
     float deadzone = 0.2f;
+    float walkSpeed = 0.7f, creepSpeed = 0.45f; // stick push of the movement keys (run = 1)
     // Mouse look (until the game's camera is driven directly: mapped onto the look buttons).
     float mouseSensX = 1.0f, mouseSensY = 1.0f;
     bool invertY = false;
@@ -136,6 +145,8 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& path) {
     s.devLoadout = ini.get("dev", "loadout", s.devLoadout);
     s.volume = getF(ini, "audio", "volume", 1.0f);
     s.deadzone = getF(ini, "input", "deadzone", 0.2f);
+    s.walkSpeed = std::clamp(getF(ini, "input", "walk_speed", 0.7f), 0.35f, 1.0f);
+    s.creepSpeed = std::clamp(getF(ini, "input", "creep_speed", 0.45f), 0.35f, 1.0f);
     s.mouseLookMode = (int)getF(ini, "input", "mouse_look", 1);
     s.mouseLook = s.mouseLookMode != 0;
     s.invertX = getF(ini, "input", "invert_x", 0) != 0;
@@ -153,12 +164,6 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& path) {
     s.invertY = getF(ini, "input", "invert_y", 0) != 0;
     for (int i = 0; i < IN_COUNT; ++i) {
         s.bindingText[i] = ini.get("bindings", kInputNames[i], kDefaultBindings[i]);
-        // Earlier defaults: Backspace first for the button hints; the right button and the left
-        // trigger now aim down sights (the zoom moved to the middle button).
-        if ((i == IN_CIRCLE && s.bindingText[i] == "key:L, key:Backspace, pad:b") ||
-            (i == IN_UP && s.bindingText[i] == "key:Up, mouse:right, pad:dpup") ||
-            (i == IN_L && s.bindingText[i] == "key:Space, pad:leftshoulder, pad:lefttrigger"))
-            s.bindingText[i] = kDefaultBindings[i];
         parseList(s.bindingText[i], s.bindings[i]);
     }
 }
@@ -184,6 +189,8 @@ void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& path)
     ini.set("dev", "loadout", s.devLoadout);
     ini.set("audio", "volume", std::to_string(s.volume));
     ini.set("input", "deadzone", std::to_string(s.deadzone));
+    ini.set("input", "walk_speed", std::to_string(s.walkSpeed));
+    ini.set("input", "creep_speed", std::to_string(s.creepSpeed));
     ini.set("input", "mouse_look", std::to_string(s.mouseLookMode));
     ini.set("input", "ads_sensitivity", std::to_string(s.adsSens));
     ini.set("input", "ads_toggle", s.adsToggle ? "1" : "0");
@@ -308,10 +315,13 @@ void updateController(const FrontSettings& s, InputState& in, bool focused, floa
             psp::host::g_aim.pitch += r.y * k * s.padTurnRate * s.padSensY * lookScale * dt * (s.padInvertY ? -1.0f : 1.0f);
         }
     }
-    if (held[IN_STICK_LEFT]) ax = -1;
-    if (held[IN_STICK_RIGHT]) ax = 1;
-    if (held[IN_STICK_UP]) ay = -1;
-    if (held[IN_STICK_DOWN]) ay = 1;
+    // Keys move at a walk; run pushes the stick all the way (the game's top speed), creep just
+    // past the game's dead zone (about 0.3).
+    const float keyStick = held[IN_CREEP] ? s.creepSpeed : (held[IN_RUN] ? 1.0f : s.walkSpeed);
+    if (held[IN_STICK_LEFT]) ax = -keyStick;
+    if (held[IN_STICK_RIGHT]) ax = keyStick;
+    if (held[IN_STICK_UP]) ay = -keyStick;
+    if (held[IN_STICK_DOWN]) ay = keyStick;
     if (onPcRow) ax = 0;
     if (ax != 0 && ay != 0 && (held[IN_STICK_LEFT] || held[IN_STICK_RIGHT]) && (held[IN_STICK_UP] || held[IN_STICK_DOWN])) {
         ax *= 0.7071f;
@@ -473,11 +483,11 @@ GLuint makeProgram(const char* vs, const char* fs) {
 // ---- options menu (F1) ------------------------------------------------------------------------
 
 const char* const kInputLabels[IN_COUNT] = {
-    "Arriba - zoom del juego", "Abajo - recargar", "Izquierda - arma anterior", "Derecha - arma siguiente",
-    "Cruz - mirar abajo / aceptar", "Círculo - girar a la derecha / atrás", "Cuadrado - girar a la izquierda",
-    "Triángulo - mirar arriba", "L - saltar", "R - disparar", "Start - mapa", "Select - pausa",
+    "Arriba - mira telescópica", "Abajo - fijar blanco", "Izquierda - cambiar de arma", "Derecha - recargar",
+    "Cruz - mirar abajo / aceptar", "Círculo - mirar a la derecha / atrás", "Cuadrado - mirar a la izquierda",
+    "Triángulo - mirar arriba / atrás", "L - saltar", "R - disparar", "Start - pausa", "Select - visor",
     "Stick - avanzar", "Stick - retroceder", "Stick - paso a la izquierda", "Stick - paso a la derecha",
-    "Apuntar con la mira"};
+    "Apuntar con la mira", "Correr", "Andar con sigilo"};
 
 // 0 keyboard, 1 mouse, 2 pad: a new binding replaces those of its own kind only.
 int bindingDevice(const ca::Binding& b) {
@@ -736,6 +746,8 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--fullscreen")) s.fullscreen = 1;
     }
     saveSettings(s, ini, cfgPath); // writes the defaults on first run
+    // The memory stick (saves, profiles) lives next to config.ini, not in the working directory.
+    psp::kernel::g_hostMsRoot = cfgPath.substr(0, cfgPath.find_last_of("/\\") + 1) + "memstick/";
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
@@ -743,9 +755,9 @@ int main(int argc, char** argv) {
     }
     std::string iso = findIso(s.iso);
     if (iso.empty()) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Coded Arms",
-                                 "Your Coded Arms (ULES-00124) UMD image was not found.\n"
-                                 "Put it at game/CodedArms.iso next to the executable, set [game] iso= in config.ini,\n"
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Coded Arms: Contagion",
+                                 "Your Coded Arms: Contagion (ULES-00718) UMD image was not found.\n"
+                                 "Put it at game/CodedArmsContagion.iso next to the executable, set [game] iso= in config.ini,\n"
                                  "or start with --iso PATH.", nullptr);
         return 1;
     }
@@ -756,11 +768,11 @@ int main(int argc, char** argv) {
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
     if (s.fullscreen == 1) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     if (s.fullscreen == 2) flags |= SDL_WINDOW_FULLSCREEN;
-    SDL_Window* win = SDL_CreateWindow("Coded Arms", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, s.width, s.height, flags);
+    SDL_Window* win = SDL_CreateWindow("Coded Arms: Contagion", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, s.width, s.height, flags);
     if (!win) { std::fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }
     SDL_GLContext ctx = SDL_GL_CreateContext(win);
     if (!ctx) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Coded Arms", "OpenGL 3.3 is required.", win);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Coded Arms: Contagion", "OpenGL 3.3 is required.", win);
         return 1;
     }
     const char* missing = nullptr;
@@ -952,10 +964,13 @@ int main(int argc, char** argv) {
                 SDL_SetWindowFullscreen(win, fs ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
                 continue;
             }
+            static const bool eventDebug = std::getenv("CA_EVENT_DEBUG") != nullptr;
+            if (eventDebug) std::fprintf(stderr, "[EVENT] %x %d\n", e.type, e.type == SDL_WINDOWEVENT ? (int)e.window.event : -1);
             if (menuActive && menuEvent(e)) continue;
             switch (e.type) {
             case SDL_QUIT: running = false; break;
             case SDL_KEYDOWN:
+                if (std::getenv("CA_INPUT_DEBUG")) std::fprintf(stderr, "[INPUT] key %s\n", SDL_GetScancodeName(e.key.keysym.scancode));
                 if (e.key.keysym.scancode < SDL_NUM_SCANCODES && !e.key.repeat) in.keyClicked[e.key.keysym.scancode] = true;
                 if (e.key.keysym.scancode == SDL_SCANCODE_F11 ||
                     (e.key.keysym.scancode == SDL_SCANCODE_RETURN && (e.key.keysym.mod & KMOD_ALT))) {
@@ -1032,9 +1047,29 @@ int main(int argc, char** argv) {
         }
 
         psp::gpu::PresentInfo p;
-        if (psp::gpu::renderPump(p, 4)) { frame = p; haveFrame = true; }
+        const Uint64 pumpStart = SDL_GetPerformanceCounter();
+        int pumped = 0;
+        if (psp::gpu::renderPump(p, 4)) { frame = p; haveFrame = true; ++pumped; }
         // Show the newest frame: frames left queued would make the game wait for the display.
-        while (psp::gpu::renderPump(p, 0)) frame = p;
+        // Bounded, so a slow GPU (or a software renderer) still lets input and the window run.
+        while (SDL_GetPerformanceCounter() - pumpStart < SDL_GetPerformanceFrequency() / 30 && psp::gpu::renderPump(p, 0)) {
+            frame = p;
+            ++pumped;
+        }
+        if (perf) {
+            static double pumpMs = 0, maxMs = 0;
+            static int loops = 0, frames = 0;
+            const double ms = 1000.0 * (double)(SDL_GetPerformanceCounter() - pumpStart) / (double)SDL_GetPerformanceFrequency();
+            pumpMs += ms;
+            maxMs = std::max(maxMs, ms);
+            ++loops;
+            frames += pumped;
+            if (loops == 60) {
+                std::fprintf(stderr, "[perf] 60 loops: %d frames, render %.1f ms avg, %.1f ms max\n", frames, pumpMs / 60, maxMs);
+                pumpMs = maxMs = 0;
+                loops = frames = 0;
+            }
+        }
 
         SDL_GL_GetDrawableSize(win, &dw, &dh);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);

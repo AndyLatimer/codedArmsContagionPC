@@ -25,7 +25,7 @@ void report(const char* what) {
     std::fflush(stderr);
     const std::string msg = "Coded Arms se ha cerrado por un error.\n\nLos detalles estan en:\n" +
                             (g_logPath.empty() ? std::string("la salida de error") : g_logPath);
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Coded Arms", msg.c_str(), nullptr);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Coded Arms: Contagion", msg.c_str(), nullptr);
 }
 
 #ifdef _WIN32
