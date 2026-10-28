@@ -60,9 +60,33 @@ bool AimDownSights::isWeaponCamera(const float* v) {
 }
 
 void AimDownSights::observe(const float view[12], const float world[12], bool skinned, const std::vector<Vertex>& verts) {
+    muzzleEffect_ = false;
+    if (!isWeaponCamera(view)) {
+        // The muzzle flash and the shot's trail are small quads drawn with the level's camera
+        // from the weapon's muzzle (eye space x ~0.1, y ~-0.1, starting ~0.6 ahead): while
+        // aiming they move with the weapon.
+        if (t_ <= 0 || verts.empty() || verts.size() > 16) return;
+        float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
+        for (const Vertex& vx : verts) {
+            float w[3], e[3];
+            xform(world, vx.pos, w);
+            xform(view, w, e);
+            for (int k = 0; k < 3; ++k) { lo[k] = std::min(lo[k], e[k]); hi[k] = std::max(hi[k], e[k]); }
+        }
+        muzzleEffect_ = lo[0] > -0.5f && hi[0] < 0.5f && lo[1] > -0.5f && hi[1] < 0.3f && hi[2] < 0 && hi[2] > -1.5f;
+        static const bool dbg = std::getenv("CA_ADS_DEBUG") != nullptr;
+        if (dbg && muzzleEffect_) {
+            const float c[4] = {(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, hi[2], 1};
+            float o[3];
+            for (int r = 0; r < 3; ++r) o[r] = adsMat_[r] * c[0] + adsMat_[4 + r] * c[1] + adsMat_[8 + r] * c[2] + adsMat_[12 + r];
+            std::fprintf(stderr, "[ADS] muzzle effect %zu verts near end (%.3f,%.3f,%.3f) -> (%.3f,%.3f,%.3f)\n", verts.size(), c[0], c[1],
+                         c[2], o[0], o[1], o[2]);
+        }
+        return;
+    }
     // The arms (skinned) move with the weapon but are not measured; below a dozen vertices:
-    // sprites and particles (muzzle flashes), not the weapon.
-    if (skinned || verts.size() < 12 || !isWeaponCamera(view)) return;
+    // sprites and particles, not the weapon.
+    if (skinned || verts.size() < 12) return;
     std::vector<float> pts;
     pts.reserve(verts.size() * 3);
     float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
@@ -194,7 +218,7 @@ void AimDownSights::endFrame() {
 }
 
 void AimDownSights::adjust(const float view[12], float viewportScaleX, float view44[16], float proj44[16]) const {
-    if (isWeaponCamera(view)) {
+    if (isWeaponCamera(view) || muzzleEffect_) {
         if (t_ > 0) mul(adsMat_, view44, view44);
     } else if (std::fabs(viewportScaleX) > 200 && fovScale_ != 1) { // the level (full screen; the radar is small)
         proj44[0] *= fovScale_;

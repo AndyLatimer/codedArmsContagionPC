@@ -27,6 +27,7 @@ public:
     // Adjusts the uniform matrices (4x4 column-major) of that draw.
     // `viewportScaleX`: the draw's viewport half width (240 full screen).
     void adjust(const float view[12], float viewportScaleX, float view44[16], float proj44[16]) const;
+    // (observe and adjust are called in turn for each draw.)
     // A 2D (through mode) draw: true to drop it (the crosshair, while aiming).
     bool hide2D(const std::vector<Vertex>& verts) const;
     void endFrame(); // once per presented frame
@@ -48,6 +49,7 @@ private:
     float sway_[2] = {0, 0};        // their smoothed movement since then
     float adsMat_[16];              // current weapon camera adjustment (column-major)
     float fovScale_ = 1;            // level projection scale (> 1 narrows the view)
+    bool muzzleEffect_ = false;     // the draw being observed: a level-camera effect at the muzzle
 };
 
 } // namespace psp::gpu
