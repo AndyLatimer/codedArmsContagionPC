@@ -55,6 +55,20 @@ extern Aim g_aim;
 // Aim down sights is held (front end); the renderer moves the weapon to the sights (gpu/ads.h).
 extern std::atomic<bool> g_ads;
 
+// View and aim down sights settings (front end controls.ini [ADS], graphics.ini, weapons.ini),
+// read by the renderer every frame. Fields of view are horizontal, in degrees, for the PSP's
+// 480x272 picture (the game's own is 80; wider windows add to the sides, Hor+).
+struct AdsSettings {
+    std::atomic<bool> enabled{true};
+    std::atomic<float> transitionS{0.18f};   // hip <-> sights
+    std::atomic<float> normalFov{80.0f};     // the level's view when not aiming
+    std::atomic<float> adsFov{65.0f};        // and while aiming
+    std::atomic<bool> hideCrosshair{true};   // while aiming
+    std::atomic<float> weaponCloser{0.2f};   // share of its distance the weapon comes towards the eye
+    std::atomic<float> sightX{0}, sightY{0}; // fine tuning of the sight point (weapon units, + = right/up)
+};
+extern AdsSettings g_adsSettings;
+
 // Dev mode (front end [dev], game_hooks.cpp): every weapon and grenade, the five the player
 // starts levels with (weapon ids 0-22, grenades 23-32, -1 empty), endless ammo, and requests to
 // put the next (+1) or previous (-1) weapon in the place of the current one.

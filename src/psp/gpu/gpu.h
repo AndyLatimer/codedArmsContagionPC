@@ -42,6 +42,7 @@ bool renderPump(PresentInfo& out, int timeoutMs);
 bool readPresented(const PresentInfo& p, std::vector<uint32_t>& rgba, int& w, int& h);
 void renderShutdown();
 void dumpNextFrames(int n); // debug: log every draw of the next n frames
+void dumpDrawMatrices(int n); // debug: log the matrices of every 3D draw of the next n frames
 void setMaxDraws(int n);                    // debug: execute only the first n draws of each frame (-1 = all)
 void setSkipFramebufferTextures(bool skip); // debug: skip draws that sample framebuffers
 

@@ -264,6 +264,11 @@ void controlThread(std::string path) {
                 psp::host::g_dev.cycle = std::atoi(arg);
             } else if (c == "ads") { // ads 0|1: aim down sights
                 psp::host::g_ads = std::atoi(arg) != 0;
+            } else if (c == "fov") { // fov NORMAL ADS: fields of view (degrees)
+                float a = 80, b = 65;
+                std::sscanf(l.c_str(), "%*s %f %f", &a, &b);
+                psp::host::g_adsSettings.normalFov = a;
+                psp::host::g_adsSettings.adsFov = b;
             } else if (c == "mapshot") { // mapshot FILE: the minimap (256 px, 150 units)
                 std::vector<uint32_t> px;
                 if (psp::gpu::minimap::render(px, 256, 150.0f)) stbi_write_png(arg, 256, 256, 4, px.data(), 256 * 4);
@@ -271,6 +276,8 @@ void controlThread(std::string path) {
             } else if (c == "shot") {
                 std::lock_guard<std::mutex> lk(g_ctlMutex);
                 g_ctlShots.push_back(arg);
+            } else if (c == "matdump") { // matdump [N]: matrices of every 3D draw of the next N frames
+                psp::gpu::dumpDrawMatrices(n >= 2 && std::atoi(arg) > 0 ? std::atoi(arg) : 1);
             } else if (c == "gpudump") {
                 psp::gpu::dumpNextFrames(n >= 2 && std::atoi(arg) > 0 ? std::atoi(arg) : 1);
             } else if (c == "aim") {

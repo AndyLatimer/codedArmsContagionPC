@@ -13,12 +13,9 @@ namespace psp::gpu {
 
 namespace {
 
-constexpr float kZoom = 1.3f;       // field of view narrowed by this factor while aiming
-constexpr float kTransitionS = 0.15f;
-constexpr float kCloser = 0.8f;     // the weapon comes this much towards the eye
-constexpr float kSteady = 0.85f;    // share of the weapon's sway taken out while aiming
-
-using Mat = float[16]; // column-major
+constexpr float kGameFovDeg = 80.0f; // the game's own horizontal field of view (projection 1.192)
+constexpr float kSteady = 0.85f;     // share of the weapon's sway taken out while aiming
+constexpr float kDegToRad = 3.14159265f / 180.0f;
 
 void identity(float* m) { std::memset(m, 0, 16 * sizeof(float)); m[0] = m[5] = m[10] = m[15] = 1; }
 void mul(const float* a, const float* b, float* out) {
@@ -43,18 +40,28 @@ double nowUs() {
     return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-} // namespace
+float smoothstep(float t) { return t * t * (3 - 2 * t); }
 
-// The weapon's camera: near the origin, axes along the view's (this game's is turned 180 degrees).
-bool AimDownSights::isWeaponCamera(const float* v) {
-    float c[3];
-    for (int k = 0; k < 3; ++k) c[k] = -(v[3 * k] * v[9] + v[3 * k + 1] * v[10] + v[3 * k + 2] * v[11]);
-    return std::fabs(c[0]) + std::fabs(c[1]) + std::fabs(c[2]) < 20 && std::fabs(v[0]) > 0.95f && v[4] > 0.95f && std::fabs(v[8]) > 0.95f;
+// Projection scale that turns the game's field of view into `deg`.
+float fovScale(float deg) {
+    deg = std::clamp(deg, 20.0f, 150.0f);
+    return std::tan(kGameFovDeg * 0.5f * kDegToRad) / std::tan(deg * 0.5f * kDegToRad);
 }
 
-void AimDownSights::observe(const float view[12], const float world[12], const std::vector<Vertex>& verts) {
-    // Below a dozen vertices: sprites and particles (muzzle flashes, flames), not the weapon.
-    if (!isWeaponCamera(view) || verts.size() < 12) return;
+} // namespace
+
+// The weapon's camera: the identity view.
+bool AimDownSights::isWeaponCamera(const float* v) {
+    static const float kId[12] = {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0};
+    for (int i = 0; i < 12; ++i)
+        if (std::fabs(v[i] - kId[i]) > 1e-3f) return false;
+    return true;
+}
+
+void AimDownSights::observe(const float view[12], const float world[12], bool skinned, const std::vector<Vertex>& verts) {
+    // The arms (skinned) move with the weapon but are not measured; below a dozen vertices:
+    // sprites and particles (muzzle flashes), not the weapon.
+    if (skinned || verts.size() < 12 || !isWeaponCamera(view)) return;
     std::vector<float> pts;
     pts.reserve(verts.size() * 3);
     float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
@@ -64,48 +71,32 @@ void AimDownSights::observe(const float view[12], const float world[12], const s
         xform(view, w, e);
         for (int k = 0; k < 3; ++k) { lo[k] = std::min(lo[k], e[k]); hi[k] = std::max(hi[k], e[k]); pts.push_back(e[k]); }
     }
-    // Flat (billboards) or wholly far ahead (shots, rockets): effects, not the weapon.
-    if (hi[2] - lo[2] < 0.01f || hi[2] < -9.0f) return;
-    // The player's arms are the same seven meshes with every weapon (verified with all 23 in
-    // dev mode), drawn after the weapon; the rest of the weapon camera's draws are the weapon.
-    static constexpr size_t kArmMeshes[] = {101, 186, 305, 85, 143, 61, 279};
-    const bool arm = std::find(std::begin(kArmMeshes), std::end(kArmMeshes), verts.size()) != std::end(kArmMeshes);
-    if (arm) armsSeen_ = true;
-    else notArms_.insert(notArms_.end(), pts.begin(), pts.end());
-    // Fallback when the arms are not recognised: narrow, or wholly in front of the camera (the
-    // arms are wide and reach back); failing that, everything in front of the hands' reach.
-    const bool gun = hi[0] - lo[0] < 1.2f || hi[2] < -2.0f;
-    if (gun) gun_.insert(gun_.end(), pts.begin(), pts.end());
+    // Flat (billboards) or behind the eye: effects, not the weapon.
+    if (hi[2] - lo[2] < 1e-3f || lo[2] > 0) return;
+    gun_.insert(gun_.end(), pts.begin(), pts.end());
     static const bool dbg = std::getenv("CA_ADS_DEBUG") && std::atoi(std::getenv("CA_ADS_DEBUG")) >= 2;
     if (dbg && host::g_ads.load())
-        std::fprintf(stderr, "[ADS] draw %zu verts x %.2f..%.2f y %.2f..%.2f z %.2f..%.2f%s\n", verts.size(), lo[0], hi[0], lo[1],
-                     hi[1], lo[2], hi[2], arm ? " arm" : "");
-    for (size_t i = 0; i < pts.size(); i += 3)
-        if (pts[i + 2] < -2.0f) front_.insert(front_.end(), pts.begin() + (long)i, pts.begin() + (long)i + 3);
+        std::fprintf(stderr, "[ADS] draw %zu verts x %.3f..%.3f y %.3f..%.3f z %.3f..%.3f\n", verts.size(), lo[0], hi[0], lo[1],
+                     hi[1], lo[2], hi[2]);
 }
 
 void AimDownSights::endFrame() {
+    const auto& cfg = host::g_adsSettings;
     const double now = nowUs();
     const float dt = lastUs_ ? (float)std::min(0.1, (now - lastUs_) / 1e6) : 0.0f;
     lastUs_ = now;
-    const bool want = host::g_ads.load();
-
+    const bool want = host::g_ads.load() && cfg.enabled.load();
 
     // Measure the weapon when aiming starts (from hip), then keep that alignment; measure again
     // when a different weapon appears (its vertex count changes for a few frames).
     if (want && t_ == 0) aligned_ = false;
-    if (armsSeen_ && notArms_.size() >= 3 * 12) gun_.swap(notArms_);
-    else if (gun_.size() < 3 * 12) gun_.swap(front_);
-    front_.clear();
-    notArms_.clear();
-    armsSeen_ = false;
     const size_t gunVerts = gun_.size() / 3;
     if (want && aligned_ && gunVerts) {
         const bool other = gunVerts * 4 < alignedVerts_ * 3 || gunVerts * 3 > alignedVerts_ * 4;
         changed_ = other ? changed_ + 1 : 0;
         if (changed_ >= 5) { aligned_ = false; changed_ = 0; }
     }
-    if (want && !aligned_ && gun_.size() >= 3 * 12) {
+    if (want && !aligned_ && gunVerts >= 12) {
         float maxY = -1e9f, minY = 1e9f;
         for (size_t i = 0; i < gun_.size(); i += 3) { maxY = std::max(maxY, gun_[i + 1]); minY = std::min(minY, gun_[i + 1]); }
         const float edge = maxY - 0.12f * (maxY - minY);
@@ -120,7 +111,7 @@ void AimDownSights::endFrame() {
         }
         if (n >= 3) {
             const double den = n * szz - sz * sz;
-            const double b = den > 1e-6 ? (n * sxz - sx * sz) / den : 0, d = den > 1e-6 ? (n * syz - sy * sz) / den : 0;
+            const double b = den > 1e-9 ? (n * sxz - sx * sz) / den : 0, d = den > 1e-9 ? (n * syz - sy * sz) / den : 0;
             sight_[0] = (float)(sx / n);
             sight_[1] = maxY;
             sight_[2] = (float)(sz / n);
@@ -144,50 +135,53 @@ void AimDownSights::endFrame() {
     }
     static const bool dbg = std::getenv("CA_ADS_DEBUG") != nullptr;
     if (dbg && want)
-        std::fprintf(stderr, "[ADS] gun %zu aligned %d t %.2f sight %.2f,%.2f,%.2f yaw %.3f pitch %.3f sway %.3f,%.3f\n",
-                     gun_.size() / 3, (int)aligned_, t_, sight_[0], sight_[1], sight_[2], yaw_, pitch_, sway_[0], sway_[1]);
+        std::fprintf(stderr, "[ADS] gun %zu aligned %d t %.2f sight %.3f,%.3f,%.3f yaw %.3f pitch %.3f sway %.4f,%.4f\n", gunVerts,
+                     (int)aligned_, t_, sight_[0], sight_[1], sight_[2], yaw_, pitch_, sway_[0], sway_[1]);
     gun_.clear();
 
+    // Towards the target at a constant rate (independent of the frame rate), without
+    // overshooting (stepping away from it and back made the weapon and the view shake).
     const float target = (want && aligned_) ? 1.0f : 0.0f;
-    // Towards the target, without overshooting (stepping away from it and back made the
-    // weapon and the view shake every frame).
-    const float step = dt / kTransitionS;
+    const float step = dt / std::max(0.01f, cfg.transitionS.load());
     t_ = target > t_ ? std::min(target, t_ + step) : std::max(target, t_ - step);
     if (target == 0 && t_ == 0) aligned_ = false;
+    const float s = smoothstep(t_);
 
-    // M(t) = T(S + (S' - S) t) * Rx(pitch t) * Ry(yaw t) * T(-S), S' = the sight on the axis.
+    // The level's field of view: the normal one, narrowing to the aiming one.
+    const float hip = fovScale(cfg.normalFov.load()), aim = fovScale(cfg.adsFov.load());
+    fovScale_ = hip + (aim - hip) * s;
+
+    // M(t) = T(S + (S' - S) t) * Rx(pitch t) * Ry(yaw t) * T(-S), S' = the sight on the axis,
+    // brought `weaponCloser` of its distance towards the eye.
+    const float sx = sight_[0] + cfg.sightX.load(), sy = sight_[1] + cfg.sightY.load();
+    const float closer = std::clamp(cfg.weaponCloser.load(), 0.0f, 0.6f);
     float a[16], b[16], c[16], d[16];
-    const float s = t_ * t_ * (3 - 2 * t_); // smoothstep
-    translate(a, sight_[0] * (1 - s), sight_[1] * (1 - s), sight_[2] + kCloser * s);
+    translate(a, sx * (1 - s), sy * (1 - s), sight_[2] * (1 - closer * s));
     rotX(b, pitch_ * s);
     rotY(c, yaw_ * s);
-    translate(d, -sight_[0] - sway_[0] * kSteady * s, -sight_[1] - sway_[1] * kSteady * s, -sight_[2]);
+    translate(d, -sx - sway_[0] * kSteady * s, -sy - sway_[1] * kSteady * s, -sight_[2]);
     mul(a, b, adsMat_);
     mul(adsMat_, c, adsMat_);
     mul(adsMat_, d, adsMat_);
 }
 
 void AimDownSights::adjust(const float view[12], float viewportScaleX, float view44[16], float proj44[16]) const {
-    if (t_ <= 0) return;
     if (isWeaponCamera(view)) {
-        mul(adsMat_, view44, view44);
-    } else if (std::fabs(viewportScaleX) > 200) { // the player's view (full screen; the radar is small)
-        const float s = t_ * t_ * (3 - 2 * t_);
-        const float z = 1 + (kZoom - 1) * s;
-        proj44[0] *= z;
-        proj44[5] *= z;
+        if (t_ > 0) mul(adsMat_, view44, view44);
+    } else if (std::fabs(viewportScaleX) > 200 && fovScale_ != 1) { // the level (full screen; the radar is small)
+        proj44[0] *= fovScale_;
+        proj44[5] *= fovScale_;
     }
 }
 
 bool AimDownSights::hide2D(const std::vector<Vertex>& verts) const {
-    if (t_ < 0.25f || verts.empty()) return false;
+    if (t_ < 0.25f || verts.empty() || !host::g_adsSettings.hideCrosshair.load()) return false;
     float lo[2] = {1e9f, 1e9f}, hi[2] = {-1e9f, -1e9f};
     for (const Vertex& v : verts)
         for (int k = 0; k < 2; ++k) { lo[k] = std::min(lo[k], v.pos[k]); hi[k] = std::max(hi[k], v.pos[k]); }
-    // The crosshair: small pieces wholly inside the middle of the screen (480x272); while the
-    // player moves it opens into separate ticks around the centre.
-    return lo[0] > 240 - 56 && hi[0] < 240 + 56 && lo[1] > 136 - 56 && hi[1] < 136 + 56 && hi[0] - lo[0] < 80 &&
-           hi[1] - lo[1] < 80;
+    // The crosshair: small pieces wholly inside the middle of the screen (480x272).
+    return lo[0] > 240 - 40 && hi[0] < 240 + 40 && lo[1] > 136 - 40 && hi[1] < 136 + 40 && hi[0] - lo[0] < 48 &&
+           hi[1] - lo[1] < 48;
 }
 
 } // namespace psp::gpu

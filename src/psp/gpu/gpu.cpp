@@ -185,6 +185,8 @@ uint32_t stencilOpGL(int o) {
 
 struct TessResult { std::vector<Vertex> verts; int prim = 0; };
 
+std::atomic<int> g_matrixDumpFrames{0}; // debug: dumpDrawMatrices
+
 class Recorder : public ge::Renderer {
 public:
     Recorder() { frame_ = std::make_unique<Frame>(); }
@@ -385,6 +387,7 @@ private:
             for (auto& [k, fb] : fbos_) fb.drawnSincePresent = false;
         }
         frame_->number = ++frameNumber_;
+        if (g_matrixDumpFrames > 0) std::fprintf(stderr, "[MAT] ---- frame %llu end\n", (unsigned long long)frameNumber_), --g_matrixDumpFrames;
         ads_.endFrame();
         minimap::endFrame();
         {
@@ -1111,6 +1114,23 @@ void Recorder::draw(uint32_t data) {
 
 void Recorder::emit(std::vector<Vertex>& vin, int prim, bool through, bool hasColor) {
     const int count = (int)vin.size();
+    if (g_matrixDumpFrames > 0 && !through) {
+        // Debug (runner command matdump): every 3D draw's matrices and view-space bounds.
+        const float* v = mtx_.view;
+        float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
+        for (const Vertex& vx : vin) {
+            float w[3], e[3];
+            for (int r = 0; r < 3; ++r) w[r] = mtx_.world[r] * vx.pos[0] + mtx_.world[3 + r] * vx.pos[1] + mtx_.world[6 + r] * vx.pos[2] + mtx_.world[9 + r];
+            for (int r = 0; r < 3; ++r) e[r] = v[r] * w[0] + v[3 + r] * w[1] + v[6 + r] * w[2] + v[9 + r];
+            for (int r = 0; r < 3; ++r) { lo[r] = std::min(lo[r], e[r]); hi[r] = std::max(hi[r], e[r]); }
+        }
+        std::fprintf(stderr, "[MAT] n=%d prim=%d skin=%d tex=%d vp=%.0f,%.0f view=[%.3f %.3f %.3f|%.3f %.3f %.3f|%.3f %.3f %.3f|%.2f %.2f %.2f] "
+                     "world.t=(%.2f %.2f %.2f) proj=[%.3f %.3f %.3f %.3f %.3f %.3f] eye x %.2f..%.2f y %.2f..%.2f z %.2f..%.2f\n",
+                     count, prim, (int)((reg(CMD_VERTEXTYPE) >> 14) & 7), (int)(reg(CMD_TEXTUREMAPENABLE) & 1),
+                     float24(reg(CMD_VIEWPORTXSCALE)), float24(reg(CMD_VIEWPORTYSCALE)), v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7],
+                     v[8], v[9], v[10], v[11], mtx_.world[9], mtx_.world[10], mtx_.world[11], mtx_.proj[0], mtx_.proj[5], mtx_.proj[8],
+                     mtx_.proj[9], mtx_.proj[10], mtx_.proj[14], lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]);
+    }
     static const bool mapDebug = std::getenv("CA_MAP_DEBUG") != nullptr;
     if (mapDebug && !through) {
         dbgViews_[std::vector<float>(mtx_.view, mtx_.view + 12)]++;
@@ -1136,7 +1156,7 @@ void Recorder::emit(std::vector<Vertex>& vin, int prim, bool through, bool hasCo
     Op op{OP_DRAW};
     Ubo ubo;
     bool transformedRect = false;
-    if (!through) ads_.observe(mtx_.view, mtx_.world, vin);
+    if (!through) ads_.observe(mtx_.view, mtx_.world, ((reg(CMD_VERTEXTYPE) >> 9) & 3) != 0, vin);
     else if (ads_.hide2D(vin)) return;
     buildUbo(ubo, target, through, hasColor);
     if (!through) ads_.adjust(mtx_.view, ubo.vpScale[0], ubo.view, ubo.proj);
@@ -1687,6 +1707,7 @@ bool readPresented(const PresentInfo& p, std::vector<uint32_t>& rgba, int& w, in
 void renderShutdown() {}
 
 void dumpNextFrames(int n) { g_dumpFrames = n; }
+void dumpDrawMatrices(int n) { g_matrixDumpFrames = n; }
 void setMaxDraws(int n) { g_maxDraws = n; }
 void setSkipFramebufferTextures(bool b) { g_skipFbTex = b; }
 
