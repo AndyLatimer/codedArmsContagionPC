@@ -1,0 +1,9 @@
+# Port hooks for Coded Arms (ULES-00124): guest address of a (non-branch) instruction, then the
+# host function (src/psp/game_hooks.cpp) called right after it executes. Found with the store
+# watchpoint build (-DCA_RECOMP_WATCH); see TECHNICAL_NOTES.md section 13.
+0889bad4  ca_hook_player_view   # entry of the per-frame view update: s3 = view object, s2 = input
+08879ff8  ca_hook_frame_interval # SetFrameInterval(settings, a1 = vblanks per frame), after its first instruction
+08837f7c  ca_hook_frame_work_done # main loop frame wait: entry (s0 = timing object)
+08837fac  ca_hook_frame_start   # main loop frame wait: exit (the vblank counter is reset)
+08927620  ca_hook_dev_player_weapons # player weapons set up (a0 = profile): stock the inventory (dev mode)
+08964e1c  ca_hook_options_menu  # OPTIONS screen update (a0 = menu, selected row at +158): the PC settings row

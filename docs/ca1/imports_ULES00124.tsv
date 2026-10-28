@@ -1,0 +1,202 @@
+# library	nid	name	return	args (PPSSPP signature notation)
+InterruptManager	ca04a2b9	sceKernelRegisterSubIntrHandler	x	xxxx
+InterruptManager	d61e6961	sceKernelReleaseSubIntrHandler	x	xx
+InterruptManager	fb8e22ec	sceKernelEnableSubIntr	x	xx
+IoFileMgrForUser	3251ea56	sceIoPollAsync	i	iP
+IoFileMgrForUser	89aa9906	sceIoOpenAsync	i	sii
+IoFileMgrForUser	6a638d83	sceIoRead	i	ixi
+IoFileMgrForUser	a0b5a7c2	sceIoReadAsync	i	ixi
+IoFileMgrForUser	42ec03ac	sceIoWrite	i	ixi
+IoFileMgrForUser	27eb27b8	sceIoLseek	I	iIi
+IoFileMgrForUser	71b19e77	sceIoLseekAsync	i	iIi
+IoFileMgrForUser	b29ddf9c	sceIoDopen	i	s
+IoFileMgrForUser	e3eb004c	sceIoDread	i	ix
+IoFileMgrForUser	eb092469	sceIoDclose	i	i
+IoFileMgrForUser	f27a9c51	sceIoRemove	i	s
+IoFileMgrForUser	06a70004	sceIoMkdir	i	si
+IoFileMgrForUser	1117c65f	sceIoRmdir	i	s
+IoFileMgrForUser	55f4717d	sceIoChdir	i	s
+IoFileMgrForUser	ace946e8	sceIoGetstat	i	sx
+IoFileMgrForUser	35dbd746	sceIoWaitAsyncCB	i	iP
+IoFileMgrForUser	779103a0	sceIoRename	i	ss
+IoFileMgrForUser	54f5fb11	sceIoDevctl	i	sxpipi
+IoFileMgrForUser	810c4bc3	sceIoClose	i	i
+IoFileMgrForUser	ff5940b6	sceIoCloseAsync	i	i
+IoFileMgrForUser	109f50bc	sceIoOpen	i	sii
+Kernel_Library	092968f4	sceKernelCpuSuspendIntr	i	
+Kernel_Library	5f10d406	sceKernelCpuResumeIntr	v	x
+LoadExecForUser	05572a5f	sceKernelExitGame	v	
+LoadExecForUser	4ac57943	sceKernelRegisterExitCallback	i	i
+ModuleMgrForUser	977de386	sceKernelLoadModule	x	sxx
+ModuleMgrForUser	50f0c1ec	sceKernelStartModule	v	xxxxx
+ModuleMgrForUser	2e0911aa	sceKernelUnloadModule	x	x
+ModuleMgrForUser	d675ebb8	sceKernelSelfStopUnloadModule	x	xxx
+StdioForUser	172d316e	sceKernelStdin	i	
+StdioForUser	a6bab2e9	sceKernelStdout	i	
+StdioForUser	f78ba90a	sceKernelStderr	i	
+SysMemUserForUser	f919f628	sceKernelTotalFreeMemSize	x	
+SysMemUserForUser	237dbd4f	sceKernelAllocPartitionMemory	i	isixx
+SysMemUserForUser	b6d61d02	sceKernelFreePartitionMemory	i	i
+SysMemUserForUser	9d9a5ba1	sceKernelGetBlockHeadAddr	x	i
+ThreadManForUser	349d6d6c	sceKernelCheckCallback	i	
+ThreadManForUser	446d8de6	sceKernelCreateThread	i	sxxixx
+ThreadManForUser	9fa03cd3	sceKernelDeleteThread	i	i
+ThreadManForUser	f475845d	sceKernelStartThread	i	iix
+ThreadManForUser	aa73c935	sceKernelExitThread	i	i
+ThreadManForUser	809ce29b	sceKernelExitDeleteThread	i	i
+ThreadManForUser	616403ba	sceKernelTerminateThread	i	i
+ThreadManForUser	383f7bcc	sceKernelTerminateDeleteThread	i	i
+ThreadManForUser	71bc9871	sceKernelChangeThreadPriority	i	ii
+ThreadManForUser	293b45b8	sceKernelGetThreadId	i	
+ThreadManForUser	9ace131e	sceKernelSleepThread	i	
+ThreadManForUser	d59ead2f	sceKernelWakeupThread	i	i
+ThreadManForUser	9944f31f	sceKernelSuspendThread	i	i
+ThreadManForUser	75156e8f	sceKernelResumeThread	i	i
+ThreadManForUser	278c0df5	sceKernelWaitThreadEnd	i	ix
+ThreadManForUser	ceadeb47	sceKernelDelayThread	i	x
+ThreadManForUser	68da9e36	sceKernelDelayThreadCB	i	x
+ThreadManForUser	d6da4ba1	sceKernelCreateSema	i	sxiip
+ThreadManForUser	28b6489c	sceKernelDeleteSema	i	i
+ThreadManForUser	3f53e640	sceKernelSignalSema	i	ii
+ThreadManForUser	4e3a1105	sceKernelWaitSema	i	iix
+ThreadManForUser	58b1f937	sceKernelPollSema	i	ii
+ThreadManForUser	55c20a00	sceKernelCreateEventFlag	i	sxxx
+ThreadManForUser	ef9e4c70	sceKernelDeleteEventFlag	x	i
+ThreadManForUser	1fb15a32	sceKernelSetEventFlag	x	ix
+ThreadManForUser	812346e4	sceKernelClearEventFlag	x	ix
+ThreadManForUser	402fcf22	sceKernelWaitEventFlag	i	ixxpp
+ThreadManForUser	e81caf8f	sceKernelCreateCallback	i	sxx
+ThreadManForUser	edba5844	sceKernelDeleteCallback	i	i
+ThreadManForUser	369ed59d	sceKernelGetSystemTimeLow	x	
+UtilsForUser	91e4f6a7	sceKernelLibcClock	x	
+UtilsForUser	27cc57f0	sceKernelLibcTime	x	x
+UtilsForUser	71ec4271	sceKernelLibcGettimeofday	x	xx
+UtilsForUser	79d1c3fa	sceKernelDcacheWritebackAll	i	
+UtilsForUser	3ee30821	sceKernelDcacheWritebackRange	i	xi
+sceSuspendForUser	eadb1bd7	sceKernelPowerLock	i	i
+sceSuspendForUser	3aee7261	sceKernelPowerUnlock	i	i
+sceSuspendForUser	090ccb3f	sceKernelPowerTick	i	i
+sceGe_user	e47e40e4	sceGeEdramGetAddr	x	
+sceGe_user	dc93cfef	sceGeGetCmd	x	i
+sceGe_user	ab49e76a	sceGeListEnQueue	x	xxip
+sceGe_user	1c0d95a6	sceGeListEnQueueHead	x	xxip
+sceGe_user	e0d68148	sceGeListUpdateStallAddr	i	xx
+sceGe_user	03444eb4	sceGeListSync	x	xx
+sceGe_user	b287bd61	sceGeDrawSync	x	x
+sceGe_user	b448ec0d	sceGeBreak	i	xx
+sceGe_user	4c06e472	sceGeContinue	i	
+sceGe_user	a4fc06a4	sceGeSetCallback	i	p
+sceGe_user	05db22ce	sceGeUnsetCallback	i	x
+sceDisplay	0e20f177	sceDisplaySetMode	x	iii
+sceDisplay	dba6c4c4	sceDisplayGetFramePerSec	f	
+sceDisplay	289d82fe	sceDisplaySetFrameBuf	i	xiii
+sceDisplay	9c6eaad7	sceDisplayGetVcount	i	
+sceDisplay	984c27e7	sceDisplayWaitVblankStart	i	
+sceDisplay	46f186c3	sceDisplayWaitVblankStartCB	i	
+sceCtrl	6a2774f3	sceCtrlSetSamplingCycle	x	x
+sceCtrl	1f4011e6	sceCtrlSetSamplingMode	x	x
+sceCtrl	3a622550	sceCtrlPeekBufferPositive	i	xx
+sceAudio	136caf51	sceAudioOutputBlocking	x	ixx
+sceAudio	e2d56b2d	sceAudioOutputPanned	x	ixxx
+sceAudio	13f592bc	sceAudioOutputPannedBlocking	x	ixxx
+sceAudio	5ec81c55	sceAudioChReserve	x	iii
+sceAudio	6fc46853	sceAudioChRelease	x	i
+sceAudio	b011922f	sceAudioGetChannelRestLength	i	i
+sceAudio	cb2e439e	sceAudioSetChannelDataLen	x	ii
+sceAudio	95fd0c2d	sceAudioChangeChannelConfig	x	ii
+sceAudio	b7e1d8e7	sceAudioChangeChannelVolume	x	ixx
+sceUtility	f88155f6	sceUtilityNetconfShutdownStart	i	
+sceUtility	91e70e35	sceUtilityNetconfUpdate	i	i
+sceUtility	6332aa39	sceUtilityNetconfGetStatus	i	
+sceUtility	50c4cd57	sceUtilitySavedataInitStart	i	x
+sceUtility	9790b33c	sceUtilitySavedataShutdownStart	i	
+sceUtility	d4b95ffb	sceUtilitySavedataUpdate	i	i
+sceUtility	8874dbe0	sceUtilitySavedataGetStatus	i	
+sceUtility	2ad8e239	sceUtilityMsgDialogInitStart	i	x
+sceUtility	67af3428	sceUtilityMsgDialogShutdownStart	i	
+sceUtility	95fc253b	sceUtilityMsgDialogUpdate	i	i
+sceUtility	9a1c91d7	sceUtilityMsgDialogGetStatus	i	
+sceUtility	a5da2406	sceUtilityGetSystemParamInt	x	xx
+sceNet	39af39a6	sceNetInit	i	xxxxx
+sceNet	281928a9	sceNetTerm	x	
+sceNet	89360950	sceNetEtherNtostr	v	xx
+sceNet	0bf0a3ae	sceNetGetLocalEtherAddr	x	x
+sceNetAdhocctl	e26f226e	sceNetAdhocctlInit	x	iix
+sceNetAdhocctl	9d689e13	sceNetAdhocctlTerm	i	
+sceNetAdhocctl	0ad043ed	sceNetAdhocctlConnect	i	s
+sceNetAdhocctl	08fff7a0	sceNetAdhocctlScan	i	
+sceNetAdhocctl	34401d65	sceNetAdhocctlDisconnect	x	
+sceNetAdhocctl	20b317a0	sceNetAdhocctlAddHandler	x	xx
+sceNetAdhocctl	6402490b	sceNetAdhocctlDelHandler	x	x
+sceNetAdhocctl	75ecd386	sceNetAdhocctlGetState	i	x
+sceNetAdhocctl	e162cb14	sceNetAdhocctlGetPeerList	i	xx
+sceNetAdhocctl	ded9d28e	sceNetAdhocctlGetParameter	i	x
+sceNetAdhocctl	cf8e084d	sceNetAdhocctlExitGameMode	i	
+sceNetAdhoc	e1d621d7	sceNetAdhocInit	x	
+sceNetAdhoc	a62c6f57	sceNetAdhocTerm	i	
+sceNetAdhoc	6f92741b	sceNetAdhocPdpCreate	i	siix
+sceNetAdhoc	abed3790	sceNetAdhocPdpSend	i	isxpiii
+sceNetAdhoc	dfe53e03	sceNetAdhocPdpRecv	i	ippppxi
+sceNetAdhoc	7f27bb5e	sceNetAdhocPdpDelete	i	ii
+sceNetAdhoc	877f6d66	sceNetAdhocPtpOpen	i	sisiiiii
+sceNetAdhoc	fc6fc07b	sceNetAdhocPtpConnect	i	iii
+sceNetAdhoc	e08bdac1	sceNetAdhocPtpListen	i	siiiiii
+sceNetAdhoc	9df81198	sceNetAdhocPtpAccept	i	ixxii
+sceNetAdhoc	4da4c788	sceNetAdhocPtpSend	i	ixxii
+sceNetAdhoc	8bea2b3e	sceNetAdhocPtpRecv	i	ixxii
+sceNetAdhoc	9ac2eeac	sceNetAdhocPtpFlush	i	iii
+sceNetAdhoc	157e6225	sceNetAdhocPtpClose	i	ii
+sceRtc	3f7ad767	sceRtcGetCurrentTick	x	x
+sceRtc	e7c27d1b	sceRtcGetCurrentClockLocalTime	i	x
+sceMpeg	21ff80e4	sceMpegQueryStreamOffset	i	xxx
+sceMpeg	611e9e11	sceMpegQueryStreamSize	x	xx
+sceMpeg	682a619b	sceMpegInit	x	
+sceMpeg	874624d6	sceMpegFinish	x	
+sceMpeg	c132e22f	sceMpegQueryMemSize	x	
+sceMpeg	d8c5f121	sceMpegCreate	x	xxxxxxx
+sceMpeg	606a4649	sceMpegDelete	i	x
+sceMpeg	42560f23	sceMpegRegistStream	i	xxx
+sceMpeg	591a4aa2	sceMpegUnRegistStream	x	xi
+sceMpeg	a780cf7e	sceMpegMallocAvcEsBuf	i	x
+sceMpeg	ceb870b1	sceMpegFreeAvcEsBuf	i	xi
+sceMpeg	f8dcb679	sceMpegQueryAtracEsSize	i	xxx
+sceMpeg	167afd9e	sceMpegInitAu	i	xxx
+sceMpeg	fe246728	sceMpegGetAvcAu	i	xxxx
+sceMpeg	e1ce83a7	sceMpegGetAtracAu	i	xxxx
+sceMpeg	707b7629	sceMpegFlushAllStream	x	x
+sceMpeg	0e3c2e9d	sceMpegAvcDecode	x	xxxxx
+sceMpeg	a11c7026	sceMpegAvcDecodeMode	i	xx
+sceMpeg	740fccd1	sceMpegAvcDecodeStop	x	xxxx
+sceMpeg	800c44df	sceMpegAtracDecode	x	xxxi
+sceMpeg	d7a29f46	sceMpegRingbufferQueryMemSize	x	i
+sceMpeg	37295ed8	sceMpegRingbufferConstruct	x	xxxxxx
+sceMpeg	13407f13	sceMpegRingbufferDestruct	x	x
+sceMpeg	b240a59e	sceMpegRingbufferPut	x	xxx
+sceMpeg	b5f6dc87	sceMpegRingbufferAvailableSize	i	x
+sceSasCore	a3589d81	__sceSasCore	x	xx
+sceSasCore	68a46b95	__sceSasGetEndFlag	x	x
+sceSasCore	440ca7d8	__sceSasSetVolume	x	xiiiii
+sceSasCore	ad84d37f	__sceSasSetPitch	x	xii
+sceSasCore	99944089	__sceSasSetVoice	x	xixii
+sceSasCore	b7660a23	__sceSasSetNoise	x	xii
+sceSasCore	019b25eb	__sceSasSetADSR	x	xiiiiii
+sceSasCore	9ec3676a	__sceSasSetADSRmode	x	xiiiiii
+sceSasCore	5f9529f6	__sceSasSetSL	x	xii
+sceSasCore	74ae582a	__sceSasGetEnvelopeHeight	x	xi
+sceSasCore	cbcd4f79	__sceSasSetSimpleADSR	x	xixx
+sceSasCore	42778a9f	__sceSasInit	x	xxxxx
+sceSasCore	a0cf2fa4	__sceSasSetKeyOff	x	xi
+sceSasCore	76f01aca	__sceSasSetKeyOn	x	xi
+sceSasCore	f983b186	__sceSasRevVON	x	xii
+sceSasCore	d5a229c9	__sceSasRevEVOL	x	xxx
+sceSasCore	33d4ab37	__sceSasRevType	x	xi
+sceSasCore	267a6dd2	__sceSasRevParam	x	xii
+scePower	04b7766e	scePowerRegisterCallback	i	ii
+sceUmdUser	46ebb729	sceUmdCheckMedium	i	
+sceUmdUser	c6183d47	sceUmdActivate	i	is
+sceUmdUser	8ef08fce	sceUmdWaitDriveStat	i	x
+sceUmdUser	6b4a146c	sceUmdGetDriveStat	x	
+sceUmdUser	aee7404d	sceUmdRegisterUMDCallBack	x	x
+sceUmdUser	bd2bde07	sceUmdUnRegisterUMDCallBack	i	i
+sceImpose	36aa6e91	sceImposeSetLanguageMode	i	ii
+sceImpose	24fd7bcf	sceImposeGetLanguageMode	x	xx

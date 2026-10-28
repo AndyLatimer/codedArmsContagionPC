@@ -1,63 +1,60 @@
 # PROGRESS — Coded Arms: Contagion PC port
 
-Procedencia: **[CA1]** reutilizado de `AndyLatimer/CodedArmsPC` (port del primer Coded Arms,
-ULES-00124, recompilación estática ya jugable) · **[NUEVO]** escrito para este proyecto.
+Procedencia: **[CA1]** reutilizado de `AndyLatimer/CodedArmsPC` (port del primer Coded Arms) ·
+**[PPSSPP]** código o datos de PPSSPP (GPL-2.0+) · **[NUEVO]** escrito para este proyecto.
 
-## Estado (2026-10-28)
+## Arquitectura
+Recompilación estática, como CA1: `BOOT.BIN` (MIPS Allegrex, en claro) se traduce a C en `build/`
+a partir de la ISO del usuario y se compila con un runtime HLE que sustituye al sistema de la PSP,
+un renderizador GE→OpenGL 3.3 y un front end SDL2. El código del juego es el original; nada del
+juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
 
-### Completado y verificado
-- [x] Inspección del entorno: el directorio de trabajo **no contiene ningún archivo del juego**
-  (buscado en `/home/user`, `/mnt/user-data/uploads`, `/mnt/attach` y en todo el disco: ninguna
-  ISO/CSO/PBP/BOOT.BIN). Sin la ISO de Contagion no puede empezar la ingeniería inversa.
-- [x] Herramientas disponibles: GCC/G++, Clang, CMake, Ninja, Python 3.13, binutils/llvm-objdump
-  (sin MIPS), y ya instalados `libsdl2-dev` y `mingw-w64` (compilación cruzada a Windows x64).
-  No hay Ghidra ni Wine.
-- [x] Estudio del proyecto hermano CodedArmsPC (ver abajo): su arquitectura de recompilación
-  estática es la estrategia elegida para Contagion.
-- [x] [NUEVO] `tools/inspect/inspect_iso.py`: análisis de Fase 1 de la ISO/CSO del usuario
-  (hashes, listado ISO 9660, UMD_DATA.BIN, PARAM.SFO, estado de BOOT.BIN/EBOOT.BIN —en claro,
-  a ceros o cifrado—, secciones, tipos de reubicación, información de módulo, todos los NID
-  importados y **cuáles no implementa aún el runtime HLE de CodedArmsPC**, y un censo de
-  formatos por número mágico). Probado con una imagen sintética: `python3 tests/test_inspect_iso.py`
-  → 20/20 comprobaciones correctas (ISO y CSO).
+## Completado (verificado)
+- [x] [NUEVO] `tools/inspect/inspect_iso.py` (Fase 1) + `tests/test_inspect_iso.py` (20/20).
+- [x] Análisis de la ISO del usuario: ULES-00718, BOOT.BIN en claro, 274 importaciones, motor distinto
+  del de CA1 (FMOD 3, SBF, scripts GM/Lua). Hashes en `TECHNICAL_NOTES.md` §1.
+- [x] [CA1] Motor integrado: recompilador, runtime HLE, GPU, front end, pruebas `cpu_diff` y `savedata`.
+  Lo específico de CA1 está archivado en `docs/ca1/`; lo de Contagion va en `src/games/ULES00718/`
+  y `tools/recomp/games/ULES00718/`.
+- [x] [NUEVO/PPSSPP] `tools/recomp/gen_imports.py`: tabla de importaciones y `hle_nids.cpp` a partir de las
+  tablas HLE de PPSSPP.
+- [x] BOOT.BIN recompilado: 14 826 funciones, sin instrucciones sin soporte; `cpu_diff` 75 503 palabras,
+  solo `sqrt.s` (signo de NaN, 3 palabras) difiere.
+- [x] [NUEVO] Corrección del recompilador para branch-and-link locales (descompresor de Contagion).
+- [x] [NUEVO/PPSSPP] HLE añadido: `sceKernelPrintf` (el juego imprime su registro), memoria volátil,
+  VTimer, FPL, `sceKernelReferThreadStatus`, `WaitSemaCB`, atributos/prioridad de hilo, versiones de SDK,
+  módulos, `sceAudioOutput2*` (canal SRC usado por FMOD), `__sceSasCoreWithMix`, grano/modo/pausa de SAS,
+  `sceIoWaitAsync`, `sceIoSync`, `sceDisplayGetFrameBuf`, `sceCtrlGetSamplingMode`,
+  `sceRtcGetAccumulativeTime`, `sceUmdWaitDriveStatCB`, `sceUtilityLoad/UnloadModule`.
+- [x] **Primer ejecutable nativo** `CodedArmsContagion` (Linux) y `ca_psprun` compilan con el código de
+  Contagion. Ejecutado sin ventana: el juego arranca, inicializa pantalla y FMOD, descomprime
+  STARTUP.SBF, ejecuta AUTOEXEC.GM y **carga la escena del menú** (MENU.SBF, sonidos, texturas) y la
+  música del menú.
 
-### No funciona / bloqueado
-- [ ] **Falta la ISO de Coded Arms: Contagion** (tu copia). Sin ella no hay nada del juego que analizar.
-- [ ] Compilar y ejecutar el código de CodedArmsPC en esta sesión necesita tu autorización explícita
-  (el entorno bloquea ejecutar código clonado de un repositorio externo sin ella).
-
-## Estrategia elegida: recompilación estática reutilizando CodedArmsPC
-
-Evidencia: CodedArmsPC ya demostró la cadena completa con el primer juego (mismo estudio, misma
-plataforma, mismo compilador probable): BOOT.BIN recompilado a C, runtime HLE (hilos, E/S, SAS,
-MPEG/ATRAC3+, savedata cifrado), GE→OpenGL 3.3, control de cámara con ratón por gancho en la
-actualización de vista del juego, ADS en las 23 armas, 60 fps, panorámico y build de Windows.
-Un emulador empaquetado no cumple el objetivo; una reimplementación desde cero no conserva el juego.
-
-| Componente de CodedArmsPC | Reutilización en Contagion |
-|---|---|
-| `tools/recomp/` (decodificador Allegrex, descubrimiento de funciones, generador de C, cargador PRX) | Directa. Ampliar si Contagion usa reubicaciones o instrucciones nuevas (lo dirá `inspect_iso.py`). |
-| `src/psp/` kernel, E/S, SAS, MPEG, utility/savedata, VFPU, GE/GPU | Directa; añadir los NID que falten. `gameName`/fichero de guardado según PARAM.SFO. |
-| `src/frontend/` (ventana, entrada, audio, diálogos, menú PC SETUP) | Directa; el menú PC SETUP depende de offsets de texto del disco → por juego. |
-| `hooks_ULES00124.tsv`, `game_hooks.cpp` (vista/yaw/pitch, intervalo de fotograma, inventario dev, OPTIONS) | **Por juego**: hay que volver a localizar cada dirección en Contagion con el build de vigilancia (`-DCA_RECOMP_WATCH`). La metodología se conserva (TECHNICAL_NOTES §13, §15, §21 de CA1). |
-| `gpu/ads.cpp` (ADS) | Algoritmo reutilizable (cámara propia del arma, medición de la mira, interpolación); la identificación de brazos/arma por número de vértices es **específica de CA1** y se rehará; se añade configuración por arma (`weapons.ini`). |
-| `gpu/button_glyphs.cpp`, `gpu/minimap.cpp` | Por juego (hashes de atlas). |
-
-Organización prevista: el motor de CodedArmsPC se integra en `src/` con todo lo específico de un
-juego bajo `src/games/<DISC_ID>/` y `tools/recomp/games/<DISC_ID>/` (ganchos, importaciones), de modo
-que las mejoras del runtime sirvan a ambos juegos.
+## No funciona todavía
+- [ ] `sceAtrac*` (14 funciones): música ATRAC3 del menú y de los niveles.
+- [ ] `jkPsmfPlayer` (11, vídeos FMV): cargar y recompilar `PSMF_JK.PRX` o HLE como PPSSPP.
+- [ ] Teclado en pantalla (Osk) y red: sin implementar (red no prevista).
+- [ ] No comprobado aún si llega a dibujar (falta ejecutar con `--gl` y capturas).
+- [ ] Ganchos de Contagion (cámara con ratón, ADS, fps): por localizar; motor distinto de CA1.
+- [ ] Compilación de Windows (`scripts/build_windows.sh`) no probada aún para Contagion.
 
 ## Cómo reproducir
 ```
 python3 tests/test_inspect_iso.py
-python3 tools/inspect/inspect_iso.py game/<tu_copia>.iso \
-    --known ../andylatimer/codedarmspc/tools/recomp/imports_ULES00124.tsv \
-    --json analysis/binary/inspect.json
+cmake -S . -B build/linux -G Ninja -DCA_GAME_ISO=$PWD/game/Coded.Arms.Contagion.iso
+cmake --build build/linux
+ctest --test-dir build/linux
+./build/linux/cpu_diff
+cd build/run && ../linux/ca_psprun --iso ../../game/Coded.Arms.Contagion.iso --seconds 40
 ```
+Variables útiles del runtime: `CA_HLE_STATS=1` (llamadas más frecuentes), `CA_TRACE`, ver `src/psp/psprun.cpp`.
 
 ## Siguiente paso concreto
-1. Recibir la ISO/CSO → ejecutar `inspect_iso.py`, registrar hashes y DISC_ID en `TECHNICAL_NOTES.md`.
-2. Si BOOT.BIN está en claro: pasar el recompilador de CA1 sobre él y listar instrucciones,
-   reubicaciones y NID no soportados. Si está a ceros: evaluar el descifrado del EBOOT.BIN del
-   propio usuario (p. ej. el PrxDecrypter de PPSSPP) antes de seguir.
-3. Integrar el motor de CA1 en este repositorio y conseguir el primer arranque (logo de Konami).
+1. Ejecutar con `--gl --shot` bajo Xvfb para ver si el menú se dibuja.
+2. Portar `sceAtrac` de PPSSPP (el decodificador ATRAC3/3+ ya está en `src/psp/ppsspp/at3_standalone`).
+3. Vídeos (`jkPsmfPlayer`), luego localizar la actualización de cámara del jugador para el ratón.
+
+## Registro de decisiones
+- 2026-10-28: Recompilación estática reutilizando el motor de CodedArmsPC (sin modificar ese repositorio).
+- 2026-10-28: Lo específico de cada juego se separa por DISC_ID; los ganchos de CA1 no se aplican.
