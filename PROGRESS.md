@@ -41,9 +41,26 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
   cinemática, terminal y **misión tutorial L0** con movimiento, cámara, disparo, HUD y radio
   (TECHNICAL_NOTES §9). Por ahora con los controles de PSP.
 
+- [x] [NUEVO] **Cámara directa con ratón** (gancho en el integrador de giro del jugador, §10):
+  sin simular botones, sin aceleración, independiente de los FPS; verificado con el ejecutable real
+  (xdotool en Xvfb): +100 cuentas = +0,22 rad, arriba mira arriba.
+- [x] [NUEVO/CA1] Controles FPS según el esquema A del juego: WASD, Shift correr, Ctrl sigilo,
+  clic izq. disparar, clic der. ADS, Espacio saltar, R recargar, rueda cambiar arma, Esc pausa,
+  F1 ajustes del PC. Mando: stick derecho con apuntado directo.
+- [x] [NUEVO] **ADS** reescrito para Contagion: arma y brazos se mueven hasta poner la punta del
+  punto de mira delantero en el centro (con alabeo corregido), FOV del nivel interpolada,
+  sensibilidad reducida, cruz oculta; se dispara normalmente (munición 9→8→7 verificada).
+  Configuración `controls.ini [ADS]` con las claves pedidas y `weapons.ini` por arma (nombre
+  interno leído del juego, `g01` = pistola).
+- [x] [NUEVO] FOV configurable (85 por defecto; sin recortes visibles a 85 y 100).
+- [x] 60 FPS (máximo nativo) o límite de 30; la lógica del juego va por tiempo (§10).
+- [x] Configuración separada: `graphics.ini`, `controls.ini`, `weapons.ini`, `config.ini`.
+
 ## No funciona todavía
-- [ ] Ganchos de Contagion (cámara con ratón, ADS, fps): por localizar; motor distinto de CA1.
-- [ ] Compilación de Windows (`scripts/build_windows.sh`) no probada aún para Contagion.
+- [ ] Teclas 1–5 para elegir arma directamente (falta localizar las ranuras y el cambio de arma).
+- [ ] Correspondencia g02…g13 ↔ armas sin verificar (solo hay pistola al empezar el tutorial).
+- [ ] "E interactuar": el juego no tiene botón de interactuar en el esquema A; sin asignar.
+- [ ] Compilación de Windows (`scripts/build_windows.sh`) no probada aún con estos cambios.
 - [ ] Teclado del sistema (Osk) y red: sin implementar (red no prevista). El juego usa su propio teclado.
 - [ ] `sqrt.s` de NaN negativo (cpu_diff, 3 palabras).
 
@@ -56,17 +73,21 @@ ctest --test-dir build/linux
 ./build/linux/cpu_diff
 cd build/run && ../linux/ca_psprun --iso ../../game/Coded.Arms.Contagion.iso --seconds 40
 ```
-Variables útiles del runtime: `CA_HLE_STATS=1` (llamadas más frecuentes), `CA_THREAD_DUMP=s` (hilos y
+Órdenes del FIFO de `ca_psprun --control`: press/hold/release/stick/shot/memdump/aim/ads/fov/fps/matdump.
+Variables útiles del runtime: `CA_HOOK_TRACE` (gancho de giro y posición), `CA_ADS_DEBUG`,
+`CA_WATCH_ADDR` + `CA_WATCH_STACK` (build de vigilancia), `CA_HLE_STATS=1` (llamadas más frecuentes), `CA_THREAD_DUMP=s` (hilos y
 event flags), `--trace` (llamadas al sistema con su resultado), `CA_GPU_DEBUG`, `CA_GPU_XFER`,
 `CA_DUMP_UPLOAD=dir`, `CA_ATRAC_VERBOSE`. Control interactivo: `--control FIFO` (press/hold/stick/shot).
 
 ## Siguiente paso concreto
-1. Compilación de Windows y prueba del front end (ventana, teclado/ratón mapeados a botones).
-2. Localizar la actualización de cámara del jugador (yaw/pitch) con el build de vigilancia para el
-   apuntado directo con ratón; después el ADS sobre la pistola.
+1. Compilación de Windows con los cambios y prueba bajo Wine.
+2. Ranuras de arma (teclas 1–5) y verificación de g02… avanzando el tutorial.
 
 ## Registro de decisiones
 - 2026-10-28: Recompilación estática reutilizando el motor de CodedArmsPC (sin modificar ese repositorio).
 - 2026-10-28: Lo específico de cada juego se separa por DISC_ID; los ganchos de CA1 no se aplican.
 - 2026-10-28: PSMF_JK.PRX se recompila (es código del juego y su API no es la de Sony) en vez de HLE.
 - 2026-10-28: ATRAC con AtracCtx2 de PPSSPP (la variante que lee la memoria del juego).
+- 2026-10-28: Ratón inyectado en el delta de giro del juego (no en la matriz): mismo camino que el mando.
+- 2026-10-28: ADS en el renderizador (la lógica del juego no cambia; los disparos van al centro).
+- 2026-10-28: Sin parche de frame rate: el juego ya va a 60 y su lógica depende del tiempo.

@@ -12,17 +12,60 @@ Instalacion
 
 Estado
 ------
-- Funcionan: menus, videos, musica, perfiles, guardado, y la mision tutorial con los
-  controles originales de la PSP asignados al teclado/raton/mando.
-- En desarrollo: camara con raton directa, apuntar con la mira (ADS), controles FPS de PC.
+- Funcionan: menus, videos, musica, perfiles, guardado y la mision tutorial.
+- Raton: camara directa (sin simular botones de la PSP), sin aceleracion e independiente
+  de los FPS.
+- Apuntar con la mira (ADS, clic derecho): el arma sube a los ojos con el punto de mira en
+  el centro, se cierra el campo de vision y baja la sensibilidad. Se puede disparar.
+- 60 FPS (el maximo del juego; su logica va por tiempo real, la velocidad no cambia) o 30.
+- En desarrollo: teclas 1-5 para elegir arma directamente, ajustes por arma verificados
+  solo para la pistola (g01).
 
-Controles actuales (config.ini, seccion [input], se pueden cambiar)
--------------------------------------------------------------------
-  WASD                stick analogico (moverse)
-  Intro / K           X (aceptar)        Retroceso / L   O (volver)
-  J                   cuadrado           I               triangulo
-  Clic izquierdo      R (disparar)       Espacio         L
-  Flechas             cruceta            Esc / P         START
-  M / Tab             SELECT             F11             pantalla completa
+Controles por defecto (controls.ini, seccion [bindings]; tambien en el menu F1)
+-------------------------------------------------------------------------------
+Siguen el esquema A del juego (Settings > Controls).
+  W A S D             moverse / pasos laterales
+  Mayus (Shift)       correr (stick a fondo; sin Mayus se anda)
+  Ctrl                andar con sigilo (el juego no tiene agacharse)
+  Raton               mirar / girar
+  Clic izquierdo      disparar (R)
+  Clic derecho        apuntar con la mira (ADS)
+  Espacio             saltar (L)
+  R / Flecha der.     recargar
+  Rueda / C           cambiar de arma (el juego solo tiene "siguiente arma")
+  Boton central / Z   mira telescopica del juego (francotirador)
+  Q                   fijar blanco (lock-on)
+  Tab / V             visor (SELECT)
+  Esc / P             pausa (START)
+  Intro               aceptar en menus (X)
+  Retroceso           volver en menus y dialogos (triangulo / circulo)
+  F1                  ajustes del PC (pausa el juego)
+  F10                 liberar / capturar el raton
+  F11, Alt+Intro      pantalla completa
+  Mando               stick izq. moverse, stick der. mirar, RT disparar, LT apuntar
 
+Configuracion (junto al ejecutable, o en la carpeta de preferencias del usuario)
+---------------------------------------------------------------------------------
+  graphics.ini  [video]: resolucion, pantalla completa, vsync, render_scale (0 = automatico),
+                widescreen (1 = ampliar a los lados), frame_rate (60 o 30).
+  controls.ini  [input]: sensibilidad del raton (mouse_sens_x/y), invert_y, invert_x,
+                mando, walk_speed / creep_speed (inclinacion del stick con el teclado).
+                [bindings]: teclas (key:NOMBRE, mouse:left|right|middle|x1|x2|wheelup|
+                wheeldown, pad:BOTON, separadas por comas).
+                [ADS]:
+                  Enabled = true
+                  Mode = Hold                      (o Toggle)
+                  TransitionTime = 0.18            (segundos)
+                  NormalFOV = 85                   (grados en horizontal; el juego usa 80)
+                  ADSFOV = 65
+                  ADSMouseSensitivityMultiplier = 0.65
+                  HideCrosshairWhileADS = true
+                  AllowFiringWhileADS = true
+  weapons.ini   [Weapon.NOMBRE] por arma (nombre interno del juego; g01 = pistola). Claves:
+                Enabled, ADSFOV, ADSMouseSensitivityMultiplier (sustituyen a [ADS]) y
+                SightOffsetX/Y, WeaponCloser (ajuste fino del punto de mira). El registro
+                muestra "[GAME] weapon NOMBRE" al cambiar de arma.
+  config.ini    [game] iso, [audio] volume.
+
+Partidas guardadas: carpeta "memstick" junto a los .ini.
 Registro de errores: CodedArmsContagion.log junto al ejecutable.

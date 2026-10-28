@@ -97,3 +97,35 @@ Profile (teclado en pantalla) → menú principal → Single Player → New Game
 (diálogo de savedata, "Save completed") → FMV_1 → Main Terminal → Missions → Mission 0: Tutorial →
 **nivel L0 jugable**: movimiento con el stick, giro con △/□, disparo con R (la munición baja), radio con
 retrato. Los toques cortos (<0,15 s) se pierden: el juego sondea el mando a su ritmo de fotogramas.
+
+## 10. Cámara, control, arma y ritmo del jugador (build de vigilancia, `CA_WATCH_ADDR`)  ✅
+- **Vigilancia**: el build `-DCA_RECOMP_WATCH` informa también de los stores VFPU (`sv.s`,
+  `sv.q`, `svl/svr.q`, palabra a palabra) y, con `CA_WATCH_STACK=1`, de una traza heurística de
+  la pila del invitado (palabras que parecen direcciones de retorno).
+- **Orientación**: no hay ángulo en la matriz del jugador (`0928f870`, rehecha cada fotograma
+  por `SetDirection` 0x088778d4); la dirección sale de `f_089745e8` a partir de **yaw = +0x50 y
+  pitch = +0x54** del objeto jugador (radianes): dir = (cos p·sin y, sin p, −cos p·cos y). Más
+  yaw gira a la derecha, más pitch mira arriba.
+- **Integrador**: el control del jugador `f_0897196c(jugador s3, estado nuevo s2, entrada s1, dt)`
+  llama en 0x08971e20 a `TurnInput 0x089c0378(…, &dYaw = sp+236, &dPitch = sp+232)` y suma
+  `estado+16 += dYaw`, `estado+20 += dPitch`; después el juego envuelve el yaw (0x0887de3c) y
+  limita el pitch. El gancho `ca_hook_player_turn` (tras 0x08971e28) suma ahí el giro del ratón:
+  pasa por el mismo camino que el mando. Verificado: +100 cuentas → +0,220 rad exactos.
+- **Ritmo**: el juego actualiza una vez por espera de vblank (60/s sin el coste del render) y su
+  lógica va por tiempo real: giro con □ = 1,674–1,676 rad/s a 30, 48 y 60 actualizaciones/s.
+  El límite de 30 FPS solo alinea las esperas a vblanks pares (`hle_devices.cpp`).
+- **Stick**: zona muerta ≈0,3; la velocidad crece con la inclinación hasta ~3,8–4,5 u/s a fondo
+  (medidas con ruido por colisiones). No hay "correr" aparte: el front end usa 0,7 (andar),
+  1,0 (correr, Shift) y 0,45 (sigilo, Ctrl).
+- **Esquemas de control** (Settings > Controls), esquema A por defecto: L saltar, R disparar,
+  ◀ cambiar arma, ▶ recargar, ▼ fijar blanco, ▲ mira telescópica, stick mover/lateral,
+  △×□○ mirar, SELECT visor, START pausa. Acciones del motor sin botón propio en la PSP: Run,
+  Creep, Grenade, Weapon Slot 1–5 (solo el esquema D asigna "Weapon Slot 5").
+- **Arma actual**: `*(*(jugador+0x29C)+0x20)` = personaje (vtable 08c20fec), `+0x54` = objeto
+  del arma, cuya primera palabra apunta a su nombre interno ("g01" = pistola, verificado). La
+  tabla de textos lista Pistol, Rifle, Shotgun, Sniper Rifle, RPG, Submachine Gun, Pulse Rifle,
+  Grenade Launcher, Lightning Gun, Gauss Rifle, Data Leech, Nova Generator, Vulcan Cannon (la
+  correspondencia con g02… no está verificada). Munición del cargador en arma+0x1C.
+- **Render del arma**: vista identidad y la misma proyección que el nivel (`proj[0]` = 1,192,
+  FOV horizontal 80° a 480×272) con plano cercano más próximo; brazos = draws con pesos de
+  skinning; arma = el resto. Radar: viewport 56×25. Ver `src/psp/gpu/ads.cpp`.
