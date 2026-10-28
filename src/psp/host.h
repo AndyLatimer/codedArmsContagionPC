@@ -92,8 +92,8 @@ struct GameOptions {
 };
 extern GameOptions g_gameOptions;
 
-// Frame rate the game is run at: 60 or 30; 0 keeps the game's own (20 fps in missions).
-// Applied when the game sets its frame interval (game_hooks.cpp).
+// Frame rate cap: 30, or 60 / 0 for the game's own maximum (60, one update per vblank; its
+// logic follows the frame time, so the game's speed does not change). hle_devices.cpp.
 extern std::atomic<int> g_targetFps;
 
 } // namespace psp::host

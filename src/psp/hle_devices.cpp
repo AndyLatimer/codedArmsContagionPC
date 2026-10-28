@@ -30,7 +30,11 @@ constexpr double kVblankUs = 1001000000.0 / 60000.0; // 59.94 Hz
 uint64_t vcount() { return (uint64_t)(nowUs() / kVblankUs); }
 void waitVblank(bool cb) {
     if (cb) runPendingCallbacks();
-    uint64_t next = (uint64_t)std::ceil((double)(vcount() + 1) * kVblankUs) + 1;
+    // Contagion updates once per vblank wait with a frame-time based logic: 60 fps at most.
+    // A 30 fps cap (host::g_targetFps) waits for every other vblank instead.
+    uint64_t target = vcount() + 1;
+    if (host::g_targetFps.load() == 30) target += target & 1;
+    uint64_t next = (uint64_t)std::ceil((double)target * kVblankUs) + 1;
     uint64_t now = nowUs();
     delayCurrentThread(next > now ? next - now : 1, cb);
     if (cb) runPendingCallbacks();

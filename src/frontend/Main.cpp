@@ -84,7 +84,7 @@ struct FrontSettings {
     float minimapSize = 0.30f; // fraction of the picture's height
     float minimapRange = 160;  // world units from the centre to the edge
     int minimapCorner = 0;     // 0 bottom left (above the health bar), 1 top right (below the game's radar)
-    int frameRate = 60;     // 60 or 30 (fixed per screen); 0 = the game's own (20 fps in missions)
+    int frameRate = 60;     // cap: 60 (the game's maximum) or 30
     bool dev = false;       // dev mode (testing): every weapon, endless ammo, F5/F6 change the weapon
     std::string devLoadout = "0, 4, 6, 19, 23"; // the five weapons levels start with (ids, see LEEME)
     float volume = 1.0f;
@@ -731,13 +731,11 @@ std::vector<ca::MenuItem> buildMenu(FrontSettings& s, SDL_Window* win, MenuState
                            }
                        }));
     m.push_back(toggle("Sincronización vertical", s.vsync, [&s] { SDL_GL_SetSwapInterval(s.vsync ? 1 : 0); }));
-    m.push_back(choice("Fotogramas por segundo", {"60", "30", "Original (20 en misiones)"},
-                       [&s] { return s.frameRate >= 60 ? 0 : (s.frameRate >= 30 ? 1 : 2); },
+    m.push_back(choice("Fotogramas por segundo", {"60", "30"}, [&s] { return s.frameRate == 30 ? 1 : 0; },
                        [&s](int k) {
-                           s.frameRate = k == 0 ? 60 : (k == 1 ? 30 : 0);
+                           s.frameRate = k == 1 ? 30 : 60;
                            psp::host::g_targetFps = s.frameRate;
-                       },
-                       "al cambiar de pantalla"));
+                       }));
     m.push_back(choice("Resolución interna", {"Automática", "1x", "2x", "3x", "4x", "5x", "6x"},
                        [&s] { return std::clamp(s.renderScale, 0, 6); }, [&s](int k) { s.renderScale = k; }, "al reiniciar"));
     m.push_back(choice("Panorámico", {"No (480x272)", "Sí"}, [&s] { return s.widescreen ? 1 : 0; },
@@ -811,7 +809,7 @@ std::vector<ca::MenuItem> buildMenu(FrontSettings& s, SDL_Window* win, MenuState
         {"Pantalla", "Ventana o pantalla completa (también con F11)."},
         {"Tamaño de la ventana", "Tamaño de la ventana cuando no está a pantalla completa."},
         {"Sincronización vertical", "Sincroniza con el monitor para evitar cortes en la imagen."},
-        {"Fotogramas por segundo", "60 o 30; Original = 20 en las misiones, como en la PSP."},
+        {"Fotogramas por segundo", "Límite de 60 (el máximo del juego) o 30. La velocidad del juego no cambia."},
         {"Resolución interna", "Resolución a la que se dibuja el juego (Automática: según la ventana)."},
         {"Panorámico", "Amplía la vista al formato de la ventana (16:9, 21:9...)."},
         {"Estirar la imagen a la ventana", "Llena la ventana sin mantener la proporción."},
@@ -921,7 +919,7 @@ int main(int argc, char** argv) {
     if (s.widescreen && dw > 0 && dh > 0 && (float)dw / dh > 480.0f / 272.0f + 0.01f) gs.wideAspect = (float)dw / dh;
     psp::gpu::install(gs);
     if (s.pcButtonHints) installButtonLabels(s);
-    psp::host::g_targetFps = s.frameRate >= 60 ? 60 : (s.frameRate >= 30 ? 30 : 0);
+    psp::host::g_targetFps = s.frameRate == 30 ? 30 : 60;
     psp::host::g_dev.enabled = s.dev;
     {
         int ids[5] = {-1, -1, -1, -1, -1};
