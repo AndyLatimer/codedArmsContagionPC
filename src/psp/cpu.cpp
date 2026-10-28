@@ -1,3 +1,4 @@
+#include <vector>
 // Runtime helpers called by recompiled code (see recomp.h).
 #include <algorithm>
 #include <cmath>
@@ -246,10 +247,32 @@ uint32_t g_prof_counts[0x400000 / 4] = {};
 }
 
 extern "C" void rt_watch_store(Ctx* c, uint32_t pc, uint32_t addr) {
-    static const uint32_t watch = [] {
-        const char* w = std::getenv("CA_WATCH_ADDR");
-        return w ? (uint32_t)std::strtoul(w, nullptr, 16) : 0u;
+    // CA_WATCH_ADDR: comma separated word addresses (up to 16).
+    static const std::vector<uint32_t> watch = [] {
+        std::vector<uint32_t> v;
+        if (const char* w = std::getenv("CA_WATCH_ADDR")) {
+            for (const char* p = w; *p;) {
+                char* e = nullptr;
+                v.push_back((uint32_t)std::strtoul(p, &e, 16) & 0x0FFFFFFC);
+                if (!e || !*e) break;
+                p = e + 1;
+            }
+        }
+        return v;
     }();
-    if (watch && ((addr ^ watch) & 0x0FFFFFFC) == 0)
-        std::fprintf(stderr, "[WATCH] %08x stores to %08x (ra=%08x)\n", pc, addr, c->r[31]);
+    for (uint32_t a : watch)
+        if ((addr & 0x0FFFFFFC) == a) {
+            std::fprintf(stderr, "[WATCH] %08x stores to %08x (ra=%08x) a0=%08x a1=%08x a2=%08x a3=%08x s0=%08x s1=%08x v0=%08x t0=%08x\n", pc, addr,
+                         c->r[31], c->r[4], c->r[5], c->r[6], c->r[7], c->r[16], c->r[17], c->r[2], c->r[8]);
+            if (std::getenv("CA_WATCH_STACK")) {
+                // Heuristic backtrace: words on the guest stack that look like return addresses.
+                std::fprintf(stderr, "        stack:");
+                for (uint32_t o = 0; o < 0x400; o += 4) {
+                    uint32_t v = psp::read32(c->r[29] + o);
+                    if (v >= 0x08804000 && v < 0x08b80000 && !(v & 3)) std::fprintf(stderr, " +%x:%08x", o, v);
+                }
+                std::fprintf(stderr, "\n");
+            }
+            break;
+        }
 }

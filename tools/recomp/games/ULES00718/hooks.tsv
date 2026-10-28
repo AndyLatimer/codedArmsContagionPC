@@ -1,3 +1,4 @@
 # Port hooks for Coded Arms: Contagion (ULES-00718): guest address of a (non-branch) instruction,
 # then the host function (src/games/ULES00718/game_hooks.cpp) called right after it executes.
-# None yet: the addresses are found with the store watchpoint build (-DCA_RECOMP_WATCH).
+# Found with the store watchpoint build (-DCA_RECOMP_WATCH); see TECHNICAL_NOTES.md section 10.
+08971e28  ca_hook_player_turn   # player control: after TurnInput(.., &dYaw = sp+236, &dPitch = sp+232), before the angles are added

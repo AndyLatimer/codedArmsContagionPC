@@ -211,6 +211,12 @@ class Gen:
         # interpreter, which handles prefixes and register addressing in one place.
         if mn in ("mfv", "mtv", "mfvc", "mtvc", "lv.s", "sv.s", "lv.q", "sv.q", "lvl.q", "lvr.q",
                   "svl.q", "svr.q") or mn.startswith("v"):
+            if self.watch and mn in ("sv.s", "sv.q", "svl.q", "svr.q"):
+                # Debug build: VFPU stores are reported word by word too.
+                a = "R(%d) + (uint32_t)%d" % (i.rs, ((i.word & 0xFFFC) ^ 0x8000) - 0x8000)
+                n = 1 if mn == "sv.s" else 4
+                w = " ".join("rt_watch_store(c, 0x%08xu, %s + %d);" % (i.pc, a, 4 * k) for k in range(n))
+                return "%s vfpu_exec(c, 0x%08xu);" % (w, i.word)
             return "vfpu_exec(c, 0x%08xu);" % i.word
         if mn in ("halt", "mfic", "mtic", "mfc0", "mtc0"):
             return "rt_privileged(c, 0x%08xu, 0x%08xu);" % (i.word, i.pc)
