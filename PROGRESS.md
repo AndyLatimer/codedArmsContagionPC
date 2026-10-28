@@ -58,7 +58,8 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
 - [x] Configuración separada: `graphics.ini`, `controls.ini`, `weapons.ini`, `config.ini`.
 
 ## No funciona todavía
-- [ ] Teclas 1–5 para elegir arma directamente (falta localizar las ranuras y el cambio de arma).
+- [ ] Teclas 1–5 para elegir arma directamente: el cambio de arma no pasa por la entrada del control
+  del jugador (§10); hay que llegar con varias armas (galería de tiro del tutorial) para localizarlo.
 - [ ] Correspondencia g02…g13 ↔ armas sin verificar (solo hay pistola al empezar el tutorial).
 - [ ] "E interactuar": el juego no tiene botón de interactuar en el esquema A; sin asignar.
 - [x] Compilación de Windows con todo lo anterior; probada bajo Wine en Xvfb: menús, perfil,

@@ -129,3 +129,10 @@ retrato. Los toques cortos (<0,15 s) se pierden: el juego sondea el mando a su r
 - **Render del arma**: vista identidad y la misma proyección que el nivel (`proj[0]` = 1,192,
   FOV horizontal 80° a 480×272) con plano cercano más próximo; brazos = draws con pesos de
   skinning; arma = el resto. Radar: viewport 56×25. Ver `src/psp/gpu/ads.cpp`.
+- **Entrada del control del jugador** (`s1` de `f_0897196c`, `CA_INPUT_TRACE=1`): +0x34 indicadores
+  (0x40 disparo, 0x20 fijar blanco), +0x30 impulso de salto, +0x14/+0x2c mirada con botones. Cambiar
+  de arma, recargar y la mira telescópica no pasan por ahí: los trata otro sistema.
+- El objeto de `personaje+0x54` recibe el arma en su constructor (`f_08949624`), así que
+  probablemente es el "arma en mano" y se recrea al cambiar de arma. Sin verificar: el tutorial
+  y la misión 1 empiezan solo con la pistola; la escopeta, la granada y el francotirador se
+  entregan en la galería de tiro del tutorial, tras la puerta con pirateo.

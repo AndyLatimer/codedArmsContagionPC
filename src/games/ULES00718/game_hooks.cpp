@@ -69,6 +69,19 @@ void readWeapon(uint32_t player) {
 extern "C" void ca_hook_player_turn(Ctx* c) {
     const uint32_t sp = c->r[29];
     readWeapon(c->r[19]);
+    static const bool inputTrace = std::getenv("CA_INPUT_TRACE") != nullptr;
+    if (inputTrace) { // the input block the control function reads (s1), when it changes
+        static uint32_t last[24];
+        uint32_t now[24];
+        bool diff = false;
+        for (int i = 0; i < 24; ++i) { now[i] = psp::read32(c->r[17] + 4 * i); diff |= now[i] != last[i]; }
+        if (diff) {
+            std::fprintf(stderr, "[INPUT] %08x:", c->r[17]);
+            for (int i = 0; i < 24; ++i) std::fprintf(stderr, " %08x", now[i]);
+            std::fprintf(stderr, "\n");
+            std::memcpy(last, now, sizeof last);
+        }
+    }
     static const bool trace = std::getenv("CA_HOOK_TRACE") != nullptr;
     std::lock_guard<std::mutex> lk(psp::host::g_aim.m);
     if (trace)
