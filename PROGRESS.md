@@ -49,7 +49,8 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
   F1 ajustes del PC. Mando: stick derecho con apuntado directo.
 - [x] [NUEVO] **ADS** reescrito para Contagion: arma y brazos se mueven hasta poner la punta del
   punto de mira delantero en el centro (con alabeo corregido), FOV del nivel interpolada,
-  sensibilidad reducida, cruz oculta; se dispara normalmente (munición 9→8→7 verificada).
+  sensibilidad reducida, cruz oculta; se dispara normalmente (munición 9→8→7 verificada) y el
+  fogonazo sale de la boca del cañón en ADS.
   Configuración `controls.ini [ADS]` con las claves pedidas y `weapons.ini` por arma (nombre
   interno leído del juego, `g01` = pistola).
 - [x] [NUEVO] FOV configurable (85 por defecto; sin recortes visibles a 85 y 100).
@@ -60,7 +61,8 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
 - [ ] Teclas 1–5 para elegir arma directamente (falta localizar las ranuras y el cambio de arma).
 - [ ] Correspondencia g02…g13 ↔ armas sin verificar (solo hay pistola al empezar el tutorial).
 - [ ] "E interactuar": el juego no tiene botón de interactuar en el esquema A; sin asignar.
-- [ ] Compilación de Windows (`scripts/build_windows.sh`) no probada aún con estos cambios.
+- [x] Compilación de Windows con todo lo anterior; probada bajo Wine en Xvfb: menús, perfil,
+  tutorial, ratón directo, ADS con clic derecho y disparo con clic izquierdo.
 - [ ] Teclado del sistema (Osk) y red: sin implementar (red no prevista). El juego usa su propio teclado.
 - [ ] `sqrt.s` de NaN negativo (cpu_diff, 3 palabras).
 
@@ -80,8 +82,9 @@ event flags), `--trace` (llamadas al sistema con su resultado), `CA_GPU_DEBUG`, 
 `CA_DUMP_UPLOAD=dir`, `CA_ATRAC_VERBOSE`. Control interactivo: `--control FIFO` (press/hold/stick/shot).
 
 ## Siguiente paso concreto
-1. Compilación de Windows con los cambios y prueba bajo Wine.
-2. Ranuras de arma (teclas 1–5) y verificación de g02… avanzando el tutorial.
+1. Ranuras de arma (teclas 1–5): el inventario es un objeto aparte (vtable 08c1da3c, punteros a
+   las armas en +0x50) sin ruta estable desde el personaje todavía; hace falta una segunda arma
+   (avanzar el tutorial) para localizar el cambio de arma y verificar g02….
 
 ## Registro de decisiones
 - 2026-10-28: Recompilación estática reutilizando el motor de CodedArmsPC (sin modificar ese repositorio).
