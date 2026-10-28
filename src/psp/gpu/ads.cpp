@@ -31,6 +31,7 @@ void mul(const float* a, const float* b, float* out) {
 void translate(float* m, float x, float y, float z) { identity(m); m[12] = x; m[13] = y; m[14] = z; }
 void rotX(float* m, float a) { identity(m); m[5] = std::cos(a); m[6] = std::sin(a); m[9] = -std::sin(a); m[10] = std::cos(a); }
 void rotY(float* m, float a) { identity(m); m[0] = std::cos(a); m[2] = -std::sin(a); m[8] = std::sin(a); m[10] = std::cos(a); }
+void rotZ(float* m, float a) { identity(m); m[0] = std::cos(a); m[1] = std::sin(a); m[4] = -std::sin(a); m[5] = std::cos(a); }
 
 void xform(const float* m12, const float* p, float* out) { // GE 4x3 (columns of 3)
     for (int r = 0; r < 3; ++r) out[r] = m12[r] * p[0] + m12[3 + r] * p[1] + m12[6 + r] * p[2] + m12[9 + r];
@@ -112,12 +113,37 @@ void AimDownSights::endFrame() {
         if (n >= 3) {
             const double den = n * szz - sz * sz;
             const double b = den > 1e-9 ? (n * sxz - sx * sz) / den : 0, d = den > 1e-9 ? (n * syz - sy * sz) / den : 0;
-            sight_[0] = (float)(sx / n);
-            sight_[1] = maxY;
-            sight_[2] = (float)(sz / n);
+            // The sight picture: the top of the front sight (the front quarter of the top
+            // edge) on the centre, framed by the rear sight's notch, which stands higher.
+            float zFront = 1e9f, zBack = -1e9f;
+            for (size_t i : topIdx_) { zFront = std::min(zFront, gun_[i + 2]); zBack = std::max(zBack, gun_[i + 2]); }
+            const float zCut = zFront + 0.25f * (zBack - zFront);
+            double fx = 0, fn = 0;
+            float fy = -1e9f, fz = 0;
+            for (size_t i : topIdx_) {
+                if (gun_[i + 2] > zCut) continue;
+                fx += gun_[i]; fn += 1;
+                if (gun_[i + 1] > fy) { fy = gun_[i + 1]; fz = gun_[i + 2]; }
+            }
+            sight_[0] = fn > 0 ? (float)(fx / fn) : (float)(sx / n);
+            sight_[1] = fn > 0 ? fy : maxY;
+            sight_[2] = fn > 0 ? fz : (float)(sz / n);
             // Turn the barrel (b, d, 1) onto the z axis: yaw first, then pitch.
             yaw_ = (float)std::atan(-std::clamp(b, -0.5, 0.5));
             pitch_ = (float)std::atan2(std::clamp(d, -0.5, 0.5), std::sqrt(1 + b * b));
+            // Cant: the upper part of the weapon (slide, receiver), with the barrel's own
+            // line taken out, leans by dx/dy; turning about the line of sight by atan(dx/dy)
+            // stands it upright.
+            const double a = (sx - b * sz) / n;
+            const float band = maxY - 0.35f * (maxY - minY);
+            double m = 0, sy2 = 0, syy = 0, sr = 0, sry = 0;
+            for (size_t i = 0; i < gun_.size(); i += 3) {
+                if (gun_[i + 1] < band) continue;
+                const double y = gun_[i + 1], r = gun_[i] - (a + b * gun_[i + 2]);
+                m += 1; sy2 += y; syy += y * y; sr += r; sry += r * y;
+            }
+            const double dy = m * syy - sy2 * sy2;
+            roll_ = m >= 6 && dy > 1e-12 ? (float)std::atan(std::clamp((m * sry - sr * sy2) / dy, -0.5, 0.5)) : 0.0f;
             aligned_ = true;
             alignedVerts_ = gunVerts;
             refTop_[0] = (float)(sx / n);
@@ -135,8 +161,8 @@ void AimDownSights::endFrame() {
     }
     static const bool dbg = std::getenv("CA_ADS_DEBUG") != nullptr;
     if (dbg && want)
-        std::fprintf(stderr, "[ADS] gun %zu aligned %d t %.2f sight %.3f,%.3f,%.3f yaw %.3f pitch %.3f sway %.4f,%.4f\n", gunVerts,
-                     (int)aligned_, t_, sight_[0], sight_[1], sight_[2], yaw_, pitch_, sway_[0], sway_[1]);
+        std::fprintf(stderr, "[ADS] gun %zu aligned %d t %.2f sight %.3f,%.3f,%.3f yaw %.3f pitch %.3f roll %.3f sway %.4f,%.4f\n",
+                     gunVerts, (int)aligned_, t_, sight_[0], sight_[1], sight_[2], yaw_, pitch_, roll_, sway_[0], sway_[1]);
     gun_.clear();
 
     // Towards the target at a constant rate (independent of the frame rate), without
@@ -151,16 +177,18 @@ void AimDownSights::endFrame() {
     const float hip = fovScale(cfg.normalFov.load()), aim = fovScale(cfg.adsFov.load());
     fovScale_ = hip + (aim - hip) * s;
 
-    // M(t) = T(S + (S' - S) t) * Rx(pitch t) * Ry(yaw t) * T(-S), S' = the sight on the axis,
-    // brought `weaponCloser` of its distance towards the eye.
+    // M(t) = T(S + (S' - S) t) * Rz(roll t) * Rx(pitch t) * Ry(yaw t) * T(-S), S' = the sight
+    // on the axis, brought `weaponCloser` of its distance towards the eye.
     const float sx = sight_[0] + cfg.sightX.load(), sy = sight_[1] + cfg.sightY.load();
     const float closer = std::clamp(cfg.weaponCloser.load(), 0.0f, 0.6f);
-    float a[16], b[16], c[16], d[16];
+    float a[16], r[16], b[16], c[16], d[16];
     translate(a, sx * (1 - s), sy * (1 - s), sight_[2] * (1 - closer * s));
+    rotZ(r, roll_ * s);
     rotX(b, pitch_ * s);
     rotY(c, yaw_ * s);
     translate(d, -sx - sway_[0] * kSteady * s, -sy - sway_[1] * kSteady * s, -sight_[2]);
-    mul(a, b, adsMat_);
+    mul(a, r, adsMat_);
+    mul(adsMat_, b, adsMat_);
     mul(adsMat_, c, adsMat_);
     mul(adsMat_, d, adsMat_);
 }

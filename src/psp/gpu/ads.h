@@ -42,6 +42,7 @@ private:
     int changed_ = 0;               // frames with a different weapon
     float sight_[3] = {0, 0, 0};    // sight point (view space)
     float yaw_ = 0, pitch_ = 0;     // rotation that puts the barrel along -z
+    float roll_ = 0;                // and the weapon upright (the hip pose is canted)
     std::vector<size_t> topIdx_;    // the weapon's top-edge vertices (offsets into gun_)
     float refTop_[2] = {0, 0};      // their mean x, y when aiming started
     float sway_[2] = {0, 0};        // their smoothed movement since then

@@ -6,20 +6,25 @@
 
 namespace ca {
 
-// Raw INI document: section -> key -> value (all lowercase keys).
+// Raw INI document: section -> key -> value. Section and key lookups ignore case; the file
+// keeps the spelling they were last written with (e.g. [ADS] TransitionTime = 0.18).
 class Ini {
 public:
     bool load(const std::string& path);
     bool save(const std::string& path) const;
     void parse(const std::string& text);
     std::string serialize() const;
+    // Only the sections accepted by `keep` (lowercase names), under a header comment.
+    std::string serialize(const std::string& header, bool (*keep)(const std::string&)) const;
 
     std::string get(const std::string& section, const std::string& key, const std::string& def) const;
     void set(const std::string& section, const std::string& key, const std::string& value);
+    bool has(const std::string& section, const std::string& key) const;
     const std::map<std::string, std::map<std::string, std::string>>& sections() const { return data_; }
 
 private:
-    std::map<std::string, std::map<std::string, std::string>> data_;
+    std::map<std::string, std::map<std::string, std::string>> data_; // lowercase section -> lowercase key
+    std::map<std::string, std::string> names_;                        // lowercase -> spelling ("sec" / "sec\nkey")
 };
 
 enum class FullscreenMode { Windowed = 0, Borderless = 1, Exclusive = 2 };

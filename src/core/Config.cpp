@@ -27,12 +27,14 @@ void Ini::parse(const std::string& text) {
         line = trim(line);
         if (line.empty() || line[0] == '#' || line[0] == ';') continue;
         if (line.front() == '[' && line.back() == ']') {
-            section = lower(trim(line.substr(1, line.size() - 2)));
+            const std::string name = trim(line.substr(1, line.size() - 2));
+            section = lower(name);
+            names_[section] = name;
             continue;
         }
         size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
-        data_[section][lower(trim(line.substr(0, eq)))] = trim(line.substr(eq + 1));
+        set(section, trim(line.substr(0, eq)), trim(line.substr(eq + 1)));
     }
 }
 
@@ -46,10 +48,17 @@ bool Ini::load(const std::string& path) {
 }
 
 std::string Ini::serialize() const {
-    std::string out = "# Coded Arms PC port - configuration. Edit freely; invalid values are clamped.\n";
+    return serialize("# Coded Arms: Contagion PC port - configuration. Edit freely; invalid values are clamped.\n",
+                     [](const std::string&) { return true; });
+}
+
+std::string Ini::serialize(const std::string& header, bool (*keep)(const std::string&)) const {
+    auto name = [&](const std::string& k) { auto n = names_.find(k); return n == names_.end() ? k : n->second; };
+    std::string out = header;
     for (const auto& [sec, kv] : data_) {
-        out += "\n[" + sec + "]\n";
-        for (const auto& [k, v] : kv) out += k + " = " + v + "\n";
+        if (!keep(sec)) continue;
+        out += "\n[" + name(sec) + "]\n";
+        for (const auto& [k, v] : kv) out += name(sec + "\n" + k) + " = " + v + "\n";
     }
     return out;
 }
@@ -62,14 +71,22 @@ bool Ini::save(const std::string& path) const {
 }
 
 std::string Ini::get(const std::string& section, const std::string& key, const std::string& def) const {
-    auto s = data_.find(section);
+    auto s = data_.find(lower(section));
     if (s == data_.end()) return def;
-    auto k = s->second.find(key);
+    auto k = s->second.find(lower(key));
     return k == s->second.end() ? def : k->second;
 }
 
+bool Ini::has(const std::string& section, const std::string& key) const {
+    auto s = data_.find(lower(section));
+    return s != data_.end() && s->second.count(lower(key)) != 0;
+}
+
 void Ini::set(const std::string& section, const std::string& key, const std::string& value) {
-    data_[section][key] = value;
+    const std::string sec = lower(section), k = lower(key);
+    data_[sec][k] = value;
+    if (!names_.count(sec) || names_[sec] == sec) names_[sec] = section;
+    names_[sec + "\n" + k] = key;
 }
 
 static float getF(const Ini& ini, const char* s, const char* k, float def) {
