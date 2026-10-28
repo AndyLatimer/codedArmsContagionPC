@@ -21,14 +21,40 @@ namespace psp::host {
 Aim g_aim;
 std::atomic<bool> g_ads{false};
 AdsSettings g_adsSettings;
+std::atomic<uint32_t> g_weaponName{0};
 DevMode g_dev;
 GameOptions g_gameOptions;
 std::atomic<int> g_targetFps{0};
 }
 
 namespace {
+bool userPtr(uint32_t a) { return a >= 0x08800000 && a < 0x0A000000 && !(a & 3); }
 float rdf(uint32_t a) { uint32_t v = psp::read32(a); float f; std::memcpy(&f, &v, 4); return f; }
 void wrf(uint32_t a, float f) { uint32_t v; std::memcpy(&v, &f, 4); psp::write32(a, v); }
+
+// Current weapon ------------------------------------------------------------------------------
+// The current weapon: player +0x29C -> +0x20 = the character, whose +0x54 is the weapon
+// object; its first word points to the weapon's name ("g01" for the pistol).
+void readWeapon(uint32_t player) {
+    uint32_t name = 0;
+    const uint32_t a = psp::read32(player + 0x29C);
+    const uint32_t ch = userPtr(a) ? psp::read32(a + 0x20) : 0;
+    const uint32_t w = userPtr(ch) ? psp::read32(ch + 0x54) : 0;
+    const uint32_t n = userPtr(w) ? psp::read32(w) : 0;
+    if (userPtr(n)) {
+        name = psp::read32(n);
+        // Up to 4 printable characters, then a terminator.
+        for (int k = 0; k < 4; ++k) {
+            const uint8_t b = (uint8_t)(name >> (8 * k));
+            if (!b) { name &= (1u << (8 * k)) - 1; break; }
+            if (b < 0x21 || b > 0x7E) { name = 0; break; }
+        }
+    }
+    if (psp::host::g_weaponName.exchange(name) != name && name) {
+        const char t[5] = {(char)name, (char)(name >> 8), (char)(name >> 16), (char)(name >> 24), 0};
+        std::fprintf(stderr, "[GAME] weapon %s\n", t);
+    }
+}
 } // namespace
 
 // Mouse / right stick aim ---------------------------------------------------------------------
@@ -42,6 +68,7 @@ void wrf(uint32_t a, float f) { uint32_t v; std::memcpy(&v, &f, 4); psp::write32
 // larger pitch looks up, while the front end's pitch grows downwards (screen space).
 extern "C" void ca_hook_player_turn(Ctx* c) {
     const uint32_t sp = c->r[29];
+    readWeapon(c->r[19]);
     static const bool trace = std::getenv("CA_HOOK_TRACE") != nullptr;
     std::lock_guard<std::mutex> lk(psp::host::g_aim.m);
     if (trace)

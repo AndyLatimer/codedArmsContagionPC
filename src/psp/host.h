@@ -69,6 +69,10 @@ struct AdsSettings {
 };
 extern AdsSettings g_adsSettings;
 
+// The player's current weapon by the game's internal name (g01 = pistol), up to 4 characters
+// packed little-endian; 0 when there is none (game_hooks.cpp, read every player update).
+extern std::atomic<uint32_t> g_weaponName;
+
 // Dev mode (front end [dev], game_hooks.cpp): every weapon and grenade, the five the player
 // starts levels with (weapon ids 0-22, grenades 23-32, -1 empty), endless ammo, and requests to
 // put the next (+1) or previous (-1) weapon in the place of the current one.

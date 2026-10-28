@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <map>
 #include <string>
 #include <thread>
 #include <vector>
@@ -101,6 +102,13 @@ struct FrontSettings {
     float normalFov = 85.0f, adsFov = 65.0f;
     float adsSens = 0.65f;   // look sensitivity multiplier while aiming
     bool adsHideCrosshair = true, adsAllowFire = true;
+    // weapons.ini: [Weapon.NAME] (the game's internal name, e.g. g01) overrides of the above.
+    struct WeaponAds {
+        int enabled = -1;                    // -1: as [ADS]
+        float adsFov = 0, sens = 0;          // 0: as [ADS]
+        float sightX = 0, sightY = 0, closer = 0.2f;
+    };
+    std::map<std::string, WeaponAds> weaponAds; // lowercase name
     int mouseLookMode = 1;   // 0 off, 1 direct aim, 2 look buttons
     float deadzoneRight = 0.15f, padCurve = 1.6f, padTurnRate = 3.0f; // rad/s at full deflection
     float padSensX = 1.0f, padSensY = 0.8f;
@@ -192,6 +200,24 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& dir) {
     s.adsSens = std::clamp(getF(ini, "ADS", "ADSMouseSensitivityMultiplier", 0.65f), 0.05f, 2.0f);
     s.adsHideCrosshair = getB(ini, "ADS", "HideCrosshairWhileADS", true);
     s.adsAllowFire = getB(ini, "ADS", "AllowFiringWhileADS", true);
+    if (!ini.has("Weapon.g01", "Name")) { // first run: the one weapon identified so far
+        ini.set("Weapon.g01", "Name", "Pistol");
+        ini.set("Weapon.g01", "SightOffsetX", "0");
+        ini.set("Weapon.g01", "SightOffsetY", "0");
+        ini.set("Weapon.g01", "WeaponCloser", "0.2");
+    }
+    for (const auto& [sec, kv] : ini.sections()) {
+        if (sec.rfind("weapon.", 0) != 0 || sec.size() <= 7) continue;
+        FrontSettings::WeaponAds w;
+        const char* sc = sec.c_str();
+        if (ini.has(sec, "Enabled")) w.enabled = getB(ini, sc, "Enabled", true) ? 1 : 0;
+        w.adsFov = ini.has(sec, "ADSFOV") ? std::clamp(getF(ini, sc, "ADSFOV", 65), 10.0f, 120.0f) : 0;
+        w.sens = ini.has(sec, "ADSMouseSensitivityMultiplier") ? std::clamp(getF(ini, sc, "ADSMouseSensitivityMultiplier", 0.65f), 0.05f, 2.0f) : 0;
+        w.sightX = std::clamp(getF(ini, sc, "SightOffsetX", 0), -0.5f, 0.5f);
+        w.sightY = std::clamp(getF(ini, sc, "SightOffsetY", 0), -0.5f, 0.5f);
+        w.closer = std::clamp(getF(ini, sc, "WeaponCloser", 0.2f), 0.0f, 0.6f);
+        s.weaponAds[sec.substr(7)] = w;
+    }
     s.invertY = getF(ini, "input", "invert_y", 0) != 0;
     for (int i = 0; i < IN_COUNT; ++i) {
         s.bindingText[i] = ini.get("bindings", kInputNames[i], kDefaultBindings[i]);
@@ -262,14 +288,35 @@ void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& dir) 
     }
 }
 
-// Aim down sights settings to the renderer (host::g_adsSettings).
+// The current weapon's weapons.ini overrides (none: the [ADS] values).
+const FrontSettings::WeaponAds* currentWeaponAds(const FrontSettings& s) {
+    const uint32_t n = psp::host::g_weaponName.load();
+    std::string name;
+    for (int k = 0; k < 4 && (n >> (8 * k)) & 0xFF; ++k) name += (char)std::tolower((int)((n >> (8 * k)) & 0xFF));
+    auto it = s.weaponAds.find(name);
+    return it == s.weaponAds.end() ? nullptr : &it->second;
+}
+bool weaponAdsEnabled(const FrontSettings& s) {
+    const auto* w = currentWeaponAds(s);
+    return s.adsEnabled && (!w || w->enabled != 0);
+}
+float weaponAdsSens(const FrontSettings& s) {
+    const auto* w = currentWeaponAds(s);
+    return w && w->sens > 0 ? w->sens : s.adsSens;
+}
+
+// Aim down sights settings to the renderer (host::g_adsSettings), for the current weapon.
 void applyAdsSettings(const FrontSettings& s) {
     auto& a = psp::host::g_adsSettings;
-    a.enabled = s.adsEnabled;
+    const auto* w = currentWeaponAds(s);
+    a.enabled = weaponAdsEnabled(s);
     a.transitionS = s.adsTransition;
     a.normalFov = s.normalFov;
-    a.adsFov = s.adsFov;
+    a.adsFov = w && w->adsFov > 0 ? w->adsFov : s.adsFov;
     a.hideCrosshair = s.adsHideCrosshair;
+    a.sightX = w ? w->sightX : 0.0f;
+    a.sightY = w ? w->sightY : 0.0f;
+    a.weaponCloser = w ? w->closer : 0.2f;
 }
 
 // ---- input --------------------------------------------------------------------------------
@@ -352,10 +399,16 @@ void updateController(const FrontSettings& s, InputState& in, bool focused, floa
         in.adsOn = held[IN_ADS];
     }
     in.adsWasHeld = held[IN_ADS];
-    if (!focused || !s.adsEnabled) in.adsOn = false;
+    // A different weapon: its weapons.ini values.
+    static uint32_t lastWeapon = 0;
+    if (psp::host::g_weaponName.load() != lastWeapon) {
+        lastWeapon = psp::host::g_weaponName.load();
+        applyAdsSettings(s);
+    }
+    if (!focused || !weaponAdsEnabled(s)) in.adsOn = false;
     psp::host::g_ads = in.adsOn;
     if (in.adsOn && !s.adsAllowFire) buttons &= ~psp::host::BTN_RTRIGGER;
-    const float lookScale = in.adsOn ? s.adsSens : 1.0f;
+    const float lookScale = in.adsOn ? weaponAdsSens(s) : 1.0f;
 
     // Analog stick: gamepad left stick, or the digital stick bindings.
     float ax = 0, ay = 0;
