@@ -94,8 +94,13 @@ struct FrontSettings {
     bool invertY = false;
     std::string lookUp = "triangle", lookDown = "cross", lookLeft = "square", lookRight = "circle";
     bool mouseLook = true;
-    float adsSens = 0.6f;    // look sensitivity while aiming down sights
-    bool adsToggle = false;  // aim down sights: hold (false) or toggle (true)
+    // Aim down sights (controls.ini [ADS]); fields of view in degrees, horizontal at 480x272.
+    bool adsEnabled = true;
+    bool adsToggle = false;  // Mode = Hold (false) or Toggle (true)
+    float adsTransition = 0.18f;
+    float normalFov = 85.0f, adsFov = 65.0f;
+    float adsSens = 0.65f;   // look sensitivity multiplier while aiming
+    bool adsHideCrosshair = true, adsAllowFire = true;
     int mouseLookMode = 1;   // 0 off, 1 direct aim, 2 look buttons
     float deadzoneRight = 0.15f, padCurve = 1.6f, padTurnRate = 3.0f; // rad/s at full deflection
     float padSensX = 1.0f, padSensY = 0.8f;
@@ -123,8 +128,24 @@ void parseList(const std::string& text, std::vector<ca::Binding>& out) {
     }
 }
 
-void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& path) {
-    ini.load(path);
+// The settings are split by subject: graphics.ini (video), controls.ini (input, bindings, aim
+// down sights), weapons.ini (per weapon aim) and config.ini (the game image, audio, the rest).
+// All live in one folder (next to the executable, or the user's preferences folder).
+const char* const kConfigFiles[] = {"config.ini", "graphics.ini", "controls.ini", "weapons.ini"};
+bool inGraphics(const std::string& sec) { return sec == "video"; }
+bool inControls(const std::string& sec) { return sec == "input" || sec == "bindings" || sec == "ads"; }
+bool inWeapons(const std::string& sec) { return sec.rfind("weapon", 0) == 0; }
+bool inConfig(const std::string& sec) { return !inGraphics(sec) && !inControls(sec) && !inWeapons(sec); }
+
+bool getB(const ca::Ini& ini, const char* s, const char* k, bool d) {
+    std::string v = ini.get(s, k, "");
+    for (char& c : v) c = (char)std::tolower((unsigned char)c);
+    if (v.empty()) return d;
+    return v == "1" || v == "true" || v == "yes" || v == "on";
+}
+
+void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& dir) {
+    for (const char* f : kConfigFiles) ini.load(dir + f);
     s.iso = ini.get("game", "iso", s.iso);
     s.width = (int)getF(ini, "video", "width", (float)s.width);
     s.height = (int)getF(ini, "video", "height", (float)s.height);
@@ -159,8 +180,18 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& path) {
     s.padInvertY = getF(ini, "input", "pad_invert_y", 0) != 0;
     s.mouseSensX = getF(ini, "input", "mouse_sens_x", 1.0f);
     s.mouseSensY = getF(ini, "input", "mouse_sens_y", 1.0f);
-    s.adsSens = std::clamp(getF(ini, "input", "ads_sensitivity", 0.6f), 0.1f, 2.0f);
-    s.adsToggle = getF(ini, "input", "ads_toggle", 0) != 0;
+    s.adsEnabled = getB(ini, "ADS", "Enabled", true);
+    {
+        std::string mode = ini.get("ADS", "Mode", "Hold");
+        for (char& c : mode) c = (char)std::tolower((unsigned char)c);
+        s.adsToggle = mode == "toggle";
+    }
+    s.adsTransition = std::clamp(getF(ini, "ADS", "TransitionTime", 0.18f), 0.0f, 1.0f);
+    s.normalFov = std::clamp(getF(ini, "ADS", "NormalFOV", 85.0f), 50.0f, 120.0f);
+    s.adsFov = std::clamp(getF(ini, "ADS", "ADSFOV", 65.0f), 20.0f, 120.0f);
+    s.adsSens = std::clamp(getF(ini, "ADS", "ADSMouseSensitivityMultiplier", 0.65f), 0.05f, 2.0f);
+    s.adsHideCrosshair = getB(ini, "ADS", "HideCrosshairWhileADS", true);
+    s.adsAllowFire = getB(ini, "ADS", "AllowFiringWhileADS", true);
     s.invertY = getF(ini, "input", "invert_y", 0) != 0;
     for (int i = 0; i < IN_COUNT; ++i) {
         s.bindingText[i] = ini.get("bindings", kInputNames[i], kDefaultBindings[i]);
@@ -168,7 +199,7 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& path) {
     }
 }
 
-void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& path) {
+void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& dir) {
     ini.set("game", "iso", s.iso);
     ini.set("video", "width", std::to_string(s.width));
     ini.set("video", "height", std::to_string(s.height));
@@ -192,8 +223,15 @@ void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& path)
     ini.set("input", "walk_speed", std::to_string(s.walkSpeed));
     ini.set("input", "creep_speed", std::to_string(s.creepSpeed));
     ini.set("input", "mouse_look", std::to_string(s.mouseLookMode));
-    ini.set("input", "ads_sensitivity", std::to_string(s.adsSens));
-    ini.set("input", "ads_toggle", s.adsToggle ? "1" : "0");
+    auto fmt = [](float v) { char b[32]; std::snprintf(b, sizeof b, "%g", v); return std::string(b); };
+    ini.set("ADS", "Enabled", s.adsEnabled ? "true" : "false");
+    ini.set("ADS", "Mode", s.adsToggle ? "Toggle" : "Hold");
+    ini.set("ADS", "TransitionTime", fmt(s.adsTransition));
+    ini.set("ADS", "NormalFOV", fmt(s.normalFov));
+    ini.set("ADS", "ADSFOV", fmt(s.adsFov));
+    ini.set("ADS", "ADSMouseSensitivityMultiplier", fmt(s.adsSens));
+    ini.set("ADS", "HideCrosshairWhileADS", s.adsHideCrosshair ? "true" : "false");
+    ini.set("ADS", "AllowFiringWhileADS", s.adsAllowFire ? "true" : "false");
     ini.set("input", "invert_x", s.invertX ? "1" : "0");
     ini.set("input", "deadzone_right", std::to_string(s.deadzoneRight));
     ini.set("input", "pad_look_curve", std::to_string(s.padCurve));
@@ -206,7 +244,32 @@ void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& path)
     ini.set("input", "mouse_sens_y", std::to_string(s.mouseSensY));
     ini.set("input", "invert_y", s.invertY ? "1" : "0");
     for (int i = 0; i < IN_COUNT; ++i) ini.set("bindings", kInputNames[i], s.bindingText[i]);
-    ini.save(path);
+    const std::pair<const char*, bool (*)(const std::string&)> files[] = {
+        {"config.ini", inConfig}, {"graphics.ini", inGraphics}, {"controls.ini", inControls}, {"weapons.ini", inWeapons}};
+    static const char* const kHeaders[] = {
+        "# Coded Arms: Contagion PC - general settings (game image, audio). Edit freely; invalid values are clamped.\n",
+        "# Coded Arms: Contagion PC - video. Edit freely; invalid values are clamped.\n",
+        "# Coded Arms: Contagion PC - controls and aim down sights. Bindings: key:NAME, mouse:left|right|middle|x1|x2|\n"
+        "# wheelup|wheeldown, pad:BUTTON, comma separated. Fields of view: horizontal degrees (the game's own is 80).\n",
+        "# Coded Arms: Contagion PC - aim down sights per weapon: a [Weapon.NAME] section overrides [ADS] keys\n"
+        "# (ADSFOV, ADSMouseSensitivityMultiplier, Enabled) and tunes the sights (SightOffsetX/Y, WeaponCloser).\n"};
+    for (int k = 0; k < 4; ++k) {
+        if (FILE* f = std::fopen((dir + files[k].first).c_str(), "wb")) {
+            const std::string text = ini.serialize(kHeaders[k], files[k].second);
+            std::fwrite(text.data(), 1, text.size(), f);
+            std::fclose(f);
+        }
+    }
+}
+
+// Aim down sights settings to the renderer (host::g_adsSettings).
+void applyAdsSettings(const FrontSettings& s) {
+    auto& a = psp::host::g_adsSettings;
+    a.enabled = s.adsEnabled;
+    a.transitionS = s.adsTransition;
+    a.normalFov = s.normalFov;
+    a.adsFov = s.adsFov;
+    a.hideCrosshair = s.adsHideCrosshair;
 }
 
 // ---- input --------------------------------------------------------------------------------
@@ -289,8 +352,9 @@ void updateController(const FrontSettings& s, InputState& in, bool focused, floa
         in.adsOn = held[IN_ADS];
     }
     in.adsWasHeld = held[IN_ADS];
-    if (!focused) in.adsOn = false;
+    if (!focused || !s.adsEnabled) in.adsOn = false;
     psp::host::g_ads = in.adsOn;
+    if (in.adsOn && !s.adsAllowFire) buttons &= ~psp::host::BTN_RTRIGGER;
     const float lookScale = in.adsOn ? s.adsSens : 1.0f;
 
     // Analog stick: gamepad left stick, or the digital stick bindings.
@@ -580,7 +644,7 @@ ca::MenuItem slider(const char* label, float& v, float lo, float hi, float step,
     m.value = [&v, percent] {
         char b[32];
         if (percent) std::snprintf(b, sizeof b, "%d %%", (int)std::lround(v * 100));
-        else std::snprintf(b, sizeof b, "%.1f", v);
+        else std::snprintf(b, sizeof b, "%g", std::round(v * 100) / 100);
         return std::string(b);
     };
     m.change = [&v, lo, hi, step, apply](int d) {
@@ -637,9 +701,17 @@ std::vector<ca::MenuItem> buildMenu(FrontSettings& s, SDL_Window* win, MenuState
     m.push_back(slider("Sensibilidad vertical", s.mouseSensY, 0.1f, 5, 0.1f, false));
     m.push_back(toggle("Invertir eje vertical", s.invertY));
     m.push_back(toggle("Invertir eje horizontal", s.invertX));
-    m.push_back(slider("Sensibilidad al apuntar con la mira", s.adsSens, 0.1f, 2, 0.1f, false));
-    m.push_back(choice("Apuntar con la mira", {"Mantener", "Pulsar para alternar"}, [&s] { return s.adsToggle ? 1 : 0; },
+
+    m.push_back(header("Apuntar con la mira (ADS)"));
+    m.push_back(toggle("Apuntar con la mira activado", s.adsEnabled, [&s] { applyAdsSettings(s); }));
+    m.push_back(choice("Modo de apuntado", {"Mantener", "Pulsar para alternar"}, [&s] { return s.adsToggle ? 1 : 0; },
                        [&s](int k) { s.adsToggle = k != 0; }));
+    m.push_back(slider("Sensibilidad al apuntar con la mira", s.adsSens, 0.05f, 2, 0.05f, true));
+    m.push_back(slider("Campo de visión", s.normalFov, 50, 120, 1, false, [&s] { applyAdsSettings(s); }));
+    m.push_back(slider("Campo de visión al apuntar", s.adsFov, 20, 120, 1, false, [&s] { applyAdsSettings(s); }));
+    m.push_back(slider("Duración de la transición (s)", s.adsTransition, 0, 1, 0.02f, false, [&s] { applyAdsSettings(s); }));
+    m.push_back(toggle("Ocultar la cruz al apuntar", s.adsHideCrosshair, [&s] { applyAdsSettings(s); }));
+    m.push_back(toggle("Disparar mientras se apunta", s.adsAllowFire));
 
     m.push_back(header("Mando"));
     m.push_back(slider("Sensibilidad horizontal", s.padSensX, 0.1f, 3, 0.1f, false));
@@ -678,7 +750,7 @@ std::vector<ca::MenuItem> buildMenu(FrontSettings& s, SDL_Window* win, MenuState
     {
         ca::MenuItem it;
         it.label = "Volver";
-        it.help = "Vuelve a Options. Los cambios se guardan en config.ini.";
+        it.help = "Vuelve al juego. Los cambios se guardan en graphics.ini, controls.ini y config.ini.";
         it.activate = [&st] { st.menu.close(); };
         m.push_back(it);
     }
@@ -697,8 +769,14 @@ std::vector<ca::MenuItem> buildMenu(FrontSettings& s, SDL_Window* win, MenuState
         {"Sensibilidad vertical", "Velocidad al mirar arriba y abajo."},
         {"Invertir eje vertical", "Invierte arriba y abajo al mirar."},
         {"Invertir eje horizontal", "Invierte izquierda y derecha al girar."},
-        {"Sensibilidad al apuntar con la mira", "Velocidad del ratón y del mando mientras se apunta con la mira."},
-        {"Apuntar con la mira", "Mantener pulsado para apuntar, o pulsar una vez para alternar."},
+        {"Sensibilidad al apuntar con la mira", "Multiplica la velocidad del ratón y del mando mientras se apunta con la mira."},
+        {"Modo de apuntado", "Mantener pulsado para apuntar, o pulsar una vez para alternar."},
+        {"Apuntar con la mira activado", "El arma sube a la altura de los ojos y se cierra el campo de visión."},
+        {"Campo de visión", "Grados en horizontal para la imagen de 480x272 (el juego usa 80); más ancho en panorámico."},
+        {"Campo de visión al apuntar", "Campo de visión mientras se apunta con la mira (menor = más zoom)."},
+        {"Duración de la transición (s)", "Tiempo que tarda el arma en ir de la cadera a la mira."},
+        {"Ocultar la cruz al apuntar", "Quita la cruz del centro mientras se apunta con la mira."},
+        {"Disparar mientras se apunta", "Si se desactiva, disparar no hace nada mientras se apunta."},
         {"Zona muerta del stick izquierdo", "Movimiento del stick que se ignora (desgaste del mando)."},
         {"Zona muerta del stick derecho", "Movimiento del stick que se ignora (desgaste del mando)."},
         {"Restaurar los controles por defecto", "Vuelve a la configuración de teclas inicial."},
@@ -739,15 +817,17 @@ int main(int argc, char** argv) {
     FrontSettings s;
     ca::Ini ini;
     const std::string cfgPath = ca::resolveConfigPath();
-    loadSettings(s, ini, cfgPath);
+    const std::string cfgDir = cfgPath.substr(0, cfgPath.find_last_of("/\\") + 1);
+    loadSettings(s, ini, cfgDir);
     for (int i = 1; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--iso") && i + 1 < argc) s.iso = argv[++i];
         else if (!std::strcmp(argv[i], "--windowed")) s.fullscreen = 0;
         else if (!std::strcmp(argv[i], "--fullscreen")) s.fullscreen = 1;
     }
-    saveSettings(s, ini, cfgPath); // writes the defaults on first run
+    saveSettings(s, ini, cfgDir); // writes the defaults on first run
+    applyAdsSettings(s);
     // The memory stick (saves, profiles) lives next to config.ini, not in the working directory.
-    psp::kernel::g_hostMsRoot = cfgPath.substr(0, cfgPath.find_last_of("/\\") + 1) + "memstick/";
+    psp::kernel::g_hostMsRoot = cfgDir + "memstick/";
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
@@ -902,7 +982,7 @@ int main(int argc, char** argv) {
                 for (const ca::Binding& b : s.bindings[input]) if (b.type == BT::Key && b.code == (int)k) return true;
                 return false;
             };
-            if (k == SDL_SCANCODE_ESCAPE || bound(IN_CIRCLE) || bound(IN_TRIANGLE)) menu.menu.close();
+            if (k == SDL_SCANCODE_ESCAPE || k == SDL_SCANCODE_F1 || bound(IN_CIRCLE) || bound(IN_TRIANGLE)) menu.menu.close();
             else if (k == SDL_SCANCODE_UP || k == SDL_SCANCODE_W) menu.menu.move(-1);
             else if (k == SDL_SCANCODE_DOWN || k == SDL_SCANCODE_S) menu.menu.move(1);
             else if (k == SDL_SCANCODE_LEFT || k == SDL_SCANCODE_A) menu.menu.change(-1);
@@ -981,6 +1061,8 @@ int main(int argc, char** argv) {
                     psp::gpu::minimap::setEnabled(s.minimap);
                 } else if (s.dev && (e.key.keysym.scancode == SDL_SCANCODE_F5 || e.key.keysym.scancode == SDL_SCANCODE_F6)) {
                     psp::host::g_dev.cycle = e.key.keysym.scancode == SDL_SCANCODE_F6 ? 1 : -1;
+                } else if (e.key.keysym.scancode == SDL_SCANCODE_F1 && !e.key.repeat) {
+                    in.openPcSettings = true; // the PC settings (the game pauses while they are open)
                 } else if (e.key.keysym.scancode == SDL_SCANCODE_F10) {
                     SDL_SetRelativeMouseMode(SDL_GetRelativeMouseMode() ? SDL_FALSE : SDL_TRUE);
                 }
@@ -1022,7 +1104,8 @@ int main(int argc, char** argv) {
             menuActive = false;
             menu.capture = -1;
             menu.menu.setPrompt("");
-            saveSettings(s, ini, cfgPath);
+            saveSettings(s, ini, cfgDir);
+            applyAdsSettings(s);
             if (s.pcButtonHints) installButtonLabels(s);
             SDL_SetRelativeMouseMode(s.mouseLook ? SDL_TRUE : SDL_FALSE);
             in.mouseHeld = in.mouseClicked = 0;
