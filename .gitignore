@@ -1,0 +1,10 @@
+build/
+dist/
+/game/
+*.iso
+*.cso
+*.log
+analysis/binary/*.json
+analysis/binary/*.txt
+__pycache__/
+*.pyc
