@@ -20,8 +20,9 @@ namespace Log { enum { Atrac = 10, SaveState = 11 }; }
 typedef uint16_t u16_le;
 typedef int16_t s16_le;
 
-// Common/StringUtils.h
-inline std::string StringFromFormat(const char* fmt, ...) {
+// Common/StringUtils.h (renamed: vfpu.cpp has its own StringFromFormat)
+#define StringFromFormat AtracStringFromFormat
+inline std::string AtracStringFromFormat(const char* fmt, ...) {
     char buf[1024];
     va_list ap;
     va_start(ap, fmt);

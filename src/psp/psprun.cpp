@@ -346,6 +346,9 @@ int runWithGl(const psp::kernel::BootOptions& opt, int scale, std::vector<std::p
             std::vector<uint32_t> px;
             int w = 0, h = 0;
             if (have && psp::gpu::readPresented(last, px, w, h)) {
+                // The PSP framebuffer's alpha is the stencil buffer, not opacity (0 in most of
+                // Contagion's screens): save the image opaque, as the display shows it.
+                for (uint32_t& p : px) p |= 0xFF000000u;
                 stbi_write_png(shots.front().second.c_str(), w, h, 4, px.data(), w * 4);
                 std::fprintf(stderr, "[RUN] shot %s at %.2fs (frame %llu, %llu presented)\n", shots.front().second.c_str(), t,
                              (unsigned long long)last.frame, (unsigned long long)frames);

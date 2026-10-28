@@ -8,3 +8,4 @@ analysis/binary/*.json
 analysis/binary/*.txt
 __pycache__/
 *.pyc
+third_party/SDL2-*/

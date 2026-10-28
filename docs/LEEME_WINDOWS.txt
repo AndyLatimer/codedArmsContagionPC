@@ -1,0 +1,28 @@
+CODED ARMS: CONTAGION - PORT NATIVO PARA PC (version de desarrollo)
+===================================================================
+
+Este paquete contiene el codigo de TU copia del juego recompilado para Windows x64.
+Es solo para tu uso personal: no lo distribuyas.
+
+Instalacion
+-----------
+1. Copia tu ISO de Coded Arms: Contagion (ULES-00718) en la carpeta "game" con el nombre
+   CodedArmsContagion.iso (tambien vale Coded.Arms.Contagion.iso).
+2. Ejecuta CodedArmsContagion.exe.
+
+Estado
+------
+- Funcionan: menus, videos, musica, perfiles, guardado, y la mision tutorial con los
+  controles originales de la PSP asignados al teclado/raton/mando.
+- En desarrollo: camara con raton directa, apuntar con la mira (ADS), controles FPS de PC.
+
+Controles actuales (config.ini, seccion [input], se pueden cambiar)
+-------------------------------------------------------------------
+  WASD                stick analogico (moverse)
+  Intro / K           X (aceptar)        Retroceso / L   O (volver)
+  J                   cuadrado           I               triangulo
+  Clic izquierdo      R (disparar)       Espacio         L
+  Flechas             cruceta            Esc / P         START
+  M / Tab             SELECT             F11             pantalla completa
+
+Registro de errores: CodedArmsContagion.log junto al ejecutable.
