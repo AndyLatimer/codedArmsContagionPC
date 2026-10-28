@@ -60,6 +60,11 @@ void describeCrash(FILE* out);
 // Blocks the calling guest thread until `ready()` returns true or `timeoutUs` (0 = none)
 // elapses. `ready` is evaluated under the kernel lock. Returns false on timeout.
 bool waitUntil(const std::function<bool()>& ready, uint64_t timeoutUs, bool processCallbacks = false);
+// Media Engine job queue (hle_sas.cpp): microseconds until a job of `us` queued now finishes.
+uint64_t meScheduleJob(uint64_t us);
+// Allocates guest memory from the top of the user partition for HLE state that lives in PSP
+// memory (e.g. ATRAC contexts). Returns 0 when out of memory.
+uint32_t allocHleMemory(uint32_t size, const char* tag);
 void delayCurrentThread(uint64_t us, bool processCallbacks = false);
 // Wakes threads blocked in waitUntil so they re-check their condition (e.g. after an
 // object changed state, or from a host thread such as audio/vblank).

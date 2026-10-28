@@ -3,6 +3,7 @@
 // Core/HLE/sceSas.cpp (GPL-2.0-or-later); the mixer itself is PPSSPP's SasAudio/SasReverb
 // (src/psp/ppsspp/). Mixing runs synchronously on the calling thread, which then waits for
 // as long as the Media Engine would take to mix the grain.
+#include <mutex>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -48,14 +49,6 @@ enum : uint32_t {
 SasInstance* g_sas = nullptr;
 uint64_t g_meBusyUntilUs = 0;
 
-// PPSSPP MEScheduleJob: the Media Engine runs one job after another. Returns how long from
-// now until a job of `us` queued now has finished.
-uint64_t meScheduleJob(uint64_t us) {
-    uint64_t now = nowUs();
-    uint64_t start = std::max(now, g_meBusyUntilUs);
-    g_meBusyUntilUs = start + us;
-    return g_meBusyUntilUs - now;
-}
 
 bool badVoice(int v) { return v < 0 || v >= PSP_SAS_VOICES_MAX; }
 
@@ -67,6 +60,17 @@ void delaySasResult(Ctx* c, uint32_t result) {
 }
 
 } // namespace
+
+// PPSSPP MEScheduleJob: the Media Engine runs one job after another (SAS mixing, ATRAC
+// decoding). Returns how long from now until a job of `us` queued now has finished.
+uint64_t meScheduleJob(uint64_t us) {
+    static std::mutex m;
+    std::lock_guard<std::mutex> lk(m);
+    uint64_t now = nowUs();
+    uint64_t start = std::max(now, g_meBusyUntilUs);
+    g_meBusyUntilUs = start + us;
+    return g_meBusyUntilUs - now;
+}
 
 void registerSasHle() {
     g_sas = new SasInstance();

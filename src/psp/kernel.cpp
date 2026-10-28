@@ -126,6 +126,15 @@ static IsoReader g_iso;
 void installTextPatches(IsoReader& iso); // game_hooks.cpp
 
 IsoReader& iso() { return g_iso; }
+
+uint32_t allocHleMemory(uint32_t size, const char* tag) {
+    std::lock_guard<std::mutex> lk(g_km);
+    int id = 0;
+    uint32_t a = g_userPartition.alloc(size, 1, 0, 256, &id);
+    log("HLE memory '%s': %u bytes at %08x", tag, size, a);
+    if (a) std::memset(hostPtr(a), 0, size);
+    return a;
+}
 int newUid() { return g_nextUid++; }
 
 static void makeReady(Thread* t) {
@@ -1312,11 +1321,13 @@ static void registerCoreHle() {
     extern void registerSasHle();
     extern void registerMpegHle();
     extern void registerUtilityHle();
+    extern void registerAtracHle();
     registerIoHle();
     registerDeviceHle();
     registerSasHle();
     registerMpegHle();
     registerUtilityHle();
+    registerAtracHle();
 }
 
 } // namespace psp::kernel

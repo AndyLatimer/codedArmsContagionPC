@@ -121,6 +121,16 @@ target_sources(ca_psp PRIVATE
 target_include_directories(ca_psp SYSTEM PRIVATE ${CA_FFMPEG_DIR}/include)
 target_compile_definitions(ca_psp PRIVATE USE_FFMPEG)
 
+# sceAtrac (FMOD's music streams): PPSSPP's Atrac player (src/psp/ppsspp/atrac, a mirror of the
+# PPSSPP paths whose Common/ and Core/ headers are shims) over the standalone ATRAC3/3+ decoder.
+set(CA_ATRAC_SOURCES src/psp/hle_atrac.cpp src/psp/ppsspp/atrac/Core/HLE/AtracCtx.cpp src/psp/ppsspp/atrac/Core/HLE/AtracCtx2.cpp src/psp/ppsspp/atrac/Core/Util/AtracTrack.cpp)
+target_sources(ca_psp PRIVATE ${CA_ATRAC_SOURCES})
+set_source_files_properties(${CA_ATRAC_SOURCES} PROPERTIES
+  INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/src/psp/ppsspp/atrac;${CMAKE_SOURCE_DIR}/src/psp/ppsspp")
+if(NOT MSVC)
+  set_source_files_properties(src/psp/ppsspp/atrac/Core/HLE/AtracCtx.cpp src/psp/ppsspp/atrac/Core/HLE/AtracCtx2.cpp src/psp/ppsspp/atrac/Core/Util/AtracTrack.cpp PROPERTIES COMPILE_OPTIONS "-w")
+endif()
+
 # KIRK crypto engine from PPSSPP's ext/libkirk (savedata encryption), see third_party/libkirk.
 add_library(ca_kirk OBJECT third_party/libkirk/kirk_engine.c third_party/libkirk/AES.c
   third_party/libkirk/SHA1.c third_party/libkirk/bn.c third_party/libkirk/ec.c)
