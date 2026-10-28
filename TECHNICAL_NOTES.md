@@ -60,3 +60,40 @@ salida por `sceAudioOutput2`) → `STARTUP.SBF` (descomprimido) → `AUTOEXEC.GM
 `A_MENU_1.AT3` (falla: `sceAtrac` sin implementar).
 El juego busca cada fichero primero en `USRDIR/` y después en su subdirectorio (errores 0x80010002
 esperados).
+
+## 6. Música: sceAtrac  ✅
+FMOD reproduce la música con `sceAtrac` en modo streaming. Se porta el reproductor de PPSSPP
+(`AtracCtx2`, contextos en memoria del juego). El `AtracCtx` antiguo no sirve: FMOD llama a
+`sceAtracAddStreamData` **antes** de lanzar la lectura asíncrona que rellena ese espacio, y AtracCtx
+copiaba los datos en ese momento (memoria aún vieja → "Sound Unit id 2f", la música se cortaba a los
+10 s). Medido con `--wav`: música continua.
+
+## 7. Vídeos: PSMF_JK.PRX (reproductor de Konami)  ✅
+- El juego carga `USRDIR/MODULE/PSMF_JK.PRX` ("jkPsmfP_library", en claro) e importa sus 23 funciones
+  `jkPsmfPlayer`. Comparten los NID de `scePsmfPlayer` de Sony pero **no su ABI** (`Create` recibe
+  480×272 donde Sony espera buffer/tamaño). Por eso se recompila el módulo original con el juego, como
+  hace PPSSPP al ejecutarlo; él usa `sceMpeg`/`scePsmf` (HLE).
+- Módulo de 2 segmentos LOAD (código en 0, datos en 0x12540) con reubicaciones relativas al
+  segmento 1; sin `module_start` (su syslib solo exporta variables). Se carga en 0x09FE0000 (reservado
+  al arrancar). BOOT exporta 469 funciones `sceLibc` que el módulo importa.
+- Usa la ruta YCbCr de sceMpeg (`AvcDecodeYCbCr` + `AvcCsc` a VRAM 0x04154000) y el juego dibuja ese
+  búfer como textura. Alfa 0 en los píxeles, como en la PSP (PPSSPP igual).
+
+## 8. Errores del runtime de CA1 encontrados con Contagion
+- **Event flags**: el modo de espera 0x20 es `PSP_EVENT_WAITCLEAR` (borra los bits esperados) y 0x10
+  `WAITCLEARALL`; estaban al revés. Los hilos MC y Decode del reproductor esperan el mismo flag (0x21):
+  el primero borraba todos los bits y el segundo no despertaba nunca.
+- **Sin apropiación**: un hilo que espera activamente (sin llamadas al sistema) a otro de más prioridad
+  bloqueaba todo (controlThread 0x088e1a40 sondea `*(s2+348)`). Ahora los saltos hacia atrás sondean
+  `rt_preempt_flag`, que activa un temporizador del host (§5 de recomp.h).
+- **GPU**: una subida de VRAM escrita por la CPU a su FBO a mitad de fotograma dejaba sin destino
+  enlazado y se perdían los dibujos siguientes (el vídeo salía negro).
+- **Recompilador**: `bltzal`/`bgezal` escriben `ra` aunque no salten (§4).
+  Todos están corregidos aquí; CodedArmsPC no se ha modificado.
+
+## 9. Flujo de juego verificado (ca_psprun --gl, control por FIFO)
+Idioma → vídeos (Konami, GameSpy, Rycar, aviso de autoguardado; START los salta) → título → Create
+Profile (teclado en pantalla) → menú principal → Single Player → New Game → dificultad → autoguardado
+(diálogo de savedata, "Save completed") → FMV_1 → Main Terminal → Missions → Mission 0: Tutorial →
+**nivel L0 jugable**: movimiento con el stick, giro con △/□, disparo con R (la munición baja), radio con
+retrato. Los toques cortos (<0,15 s) se pierden: el juego sondea el mando a su ritmo de fotogramas.

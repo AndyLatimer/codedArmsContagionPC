@@ -31,13 +31,21 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
   STARTUP.SBF, ejecuta AUTOEXEC.GM y **carga la escena del menú** (MENU.SBF, sonidos, texturas) y la
   música del menú.
 
+- [x] [PPSSPP] `sceAtrac` (AtracCtx2): música del menú continua.
+- [x] [NUEVO] Recompilación multimódulo: `PSMF_JK.PRX` (reproductor de vídeo de Konami) recompilado con
+  BOOT.BIN, importaciones enlazadas entre módulos; [PPSSPP] `scePsmf` y la ruta YCbCr de `sceMpeg`.
+  Los vídeos se ven y suenan.
+- [x] [NUEVO] Apropiación de hilos (sondeo en saltos hacia atrás + temporizador).
+- [x] Corregidos errores heredados de CA1: modos de event flag, subida de FBO a mitad de fotograma.
+- [x] **Primera escena jugable**: del idioma al título, perfil, menú, partida nueva con autoguardado,
+  cinemática, terminal y **misión tutorial L0** con movimiento, cámara, disparo, HUD y radio
+  (TECHNICAL_NOTES §9). Por ahora con los controles de PSP.
+
 ## No funciona todavía
-- [ ] `sceAtrac*` (14 funciones): música ATRAC3 del menú y de los niveles.
-- [ ] `jkPsmfPlayer` (11, vídeos FMV): cargar y recompilar `PSMF_JK.PRX` o HLE como PPSSPP.
-- [ ] Teclado en pantalla (Osk) y red: sin implementar (red no prevista).
-- [ ] No comprobado aún si llega a dibujar (falta ejecutar con `--gl` y capturas).
 - [ ] Ganchos de Contagion (cámara con ratón, ADS, fps): por localizar; motor distinto de CA1.
 - [ ] Compilación de Windows (`scripts/build_windows.sh`) no probada aún para Contagion.
+- [ ] Teclado del sistema (Osk) y red: sin implementar (red no prevista). El juego usa su propio teclado.
+- [ ] `sqrt.s` de NaN negativo (cpu_diff, 3 palabras).
 
 ## Cómo reproducir
 ```
@@ -48,13 +56,17 @@ ctest --test-dir build/linux
 ./build/linux/cpu_diff
 cd build/run && ../linux/ca_psprun --iso ../../game/Coded.Arms.Contagion.iso --seconds 40
 ```
-Variables útiles del runtime: `CA_HLE_STATS=1` (llamadas más frecuentes), `CA_TRACE`, ver `src/psp/psprun.cpp`.
+Variables útiles del runtime: `CA_HLE_STATS=1` (llamadas más frecuentes), `CA_THREAD_DUMP=s` (hilos y
+event flags), `--trace` (llamadas al sistema con su resultado), `CA_GPU_DEBUG`, `CA_GPU_XFER`,
+`CA_DUMP_UPLOAD=dir`, `CA_ATRAC_VERBOSE`. Control interactivo: `--control FIFO` (press/hold/stick/shot).
 
 ## Siguiente paso concreto
-1. Ejecutar con `--gl --shot` bajo Xvfb para ver si el menú se dibuja.
-2. Portar `sceAtrac` de PPSSPP (el decodificador ATRAC3/3+ ya está en `src/psp/ppsspp/at3_standalone`).
-3. Vídeos (`jkPsmfPlayer`), luego localizar la actualización de cámara del jugador para el ratón.
+1. Compilación de Windows y prueba del front end (ventana, teclado/ratón mapeados a botones).
+2. Localizar la actualización de cámara del jugador (yaw/pitch) con el build de vigilancia para el
+   apuntado directo con ratón; después el ADS sobre la pistola.
 
 ## Registro de decisiones
 - 2026-10-28: Recompilación estática reutilizando el motor de CodedArmsPC (sin modificar ese repositorio).
 - 2026-10-28: Lo específico de cada juego se separa por DISC_ID; los ganchos de CA1 no se aplican.
+- 2026-10-28: PSMF_JK.PRX se recompila (es código del juego y su API no es la de Sony) en vez de HLE.
+- 2026-10-28: ATRAC con AtracCtx2 de PPSSPP (la variante que lee la memoria del juego).
