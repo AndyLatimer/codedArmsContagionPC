@@ -151,7 +151,7 @@ void setButtonLabels(const ButtonLabels& labels) {
 }
 
 bool patchButtonGlyphs(uint32_t* rgba, int w, int h) {
-    if (!((w == 256 && h == 256) || (w == 512 && h == 512))) return false;
+    if (!((w == 256 && h == 256) || (w == 512 && h == 512) || (w == 16 && h == 16))) return false;
     ButtonLabels lb;
     {
         std::lock_guard<std::mutex> lk(g_mutex);
@@ -159,6 +159,17 @@ bool patchButtonGlyphs(uint32_t* rgba, int w, int h) {
     }
     Image img{rgba, w, h};
     static const bool trace = std::getenv("CA_GLYPH_TRACE") != nullptr;
+    if (w == 16) {
+        // Coded Arms: Contagion: each face button symbol of the menu footers ("x Confirm",
+        // "triangle Back") is a 16x16 texture of its own, the symbol in its 14x14 middle.
+        constexpr uint64_t kCrossHash = 0x363019193d257edaull, kTriangleHash = 0x49d040baed0fc1dfull;
+        const uint64_t hsh = shapeHash(img, 0, 0, 16, 16);
+        if (trace) std::fprintf(stderr, "[GLYPH] 16x16 shape %016llx\n", (unsigned long long)hsh);
+        const std::string* label = hsh == kCrossHash ? &lb.cross : (hsh == kTriangleHash ? &lb.triangle : nullptr);
+        if (!label || label->empty()) return false;
+        keycap(img, 1, 1, *label);
+        return true;
+    }
     if (w == 256) {
         const uint64_t hsh = shapeHash(img, 0, 114, 64, 28);
         if (trace) std::fprintf(stderr, "[GLYPH] 256 atlas shape %016llx\n", (unsigned long long)hsh);

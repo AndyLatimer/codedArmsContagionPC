@@ -1,8 +1,8 @@
 #pragma once
-// PC key labels in place of the PSP button symbols of the game's interface. The game draws
-// its button hints (key configuration, control type, footers) from two texture atlases; when
-// one of them is decoded, the PSP symbols are repainted as keycaps labelled with the PC key
-// bound to that button, in a 3x5 pixel font that matches the atlas's own lettering.
+// PC key labels in place of the PSP button symbols of the game's interface. Coded Arms drew
+// its button hints from two texture atlases; Contagion's menu footers use one 16x16 texture
+// per symbol. When one of them is decoded, the PSP symbols are repainted as keycaps labelled
+// with the PC key bound to that button, in a 3x5 pixel font that matches the game's lettering.
 #include <cstdint>
 #include <string>
 
