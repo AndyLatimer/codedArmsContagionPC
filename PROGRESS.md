@@ -56,6 +56,9 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
 - [x] [NUEVO] FOV configurable (85 por defecto; sin recortes visibles a 85 y 100).
 - [x] 60 FPS (máximo nativo) o límite de 30; la lógica del juego va por tiempo (§10).
 - [x] Configuración separada: `graphics.ini`, `controls.ini`, `weapons.ini`, `config.ini`.
+- [x] Ayudas de teclas del PC en los pies de menú (× → Intro, △ → Retroceso), verificado.
+- [x] Tutorial: tras la radio de diagnóstico la primera puerta se abre y se recorre el pasillo
+  siguiente (la puerta solo espera a que termine la radio; no es un fallo del port).
 
 ## No funciona todavía
 - [ ] Teclas 1–5 para elegir arma directamente: el cambio de arma no pasa por la entrada del control

@@ -18,6 +18,9 @@ Estado
 - Apuntar con la mira (ADS, clic derecho): el arma sube a los ojos con el punto de mira en
   el centro, se cierra el campo de vision y baja la sensibilidad. Se puede disparar.
 - 60 FPS (el maximo del juego; su logica va por tiempo real, la velocidad no cambia) o 30.
+- Los menus muestran las teclas del PC (Intro, Retroceso) en lugar de los botones de la PSP.
+- Consejo: en el tutorial, las puertas se abren cuando termina la conversacion por radio
+  (avanzala con Intro).
 - En desarrollo: teclas 1-5 para elegir arma directamente, ajustes por arma verificados
   solo para la pistola (g01).
 
