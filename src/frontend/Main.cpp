@@ -45,13 +45,13 @@ enum PspInput {
     IN_UP, IN_DOWN, IN_LEFT, IN_RIGHT, IN_CROSS, IN_CIRCLE, IN_SQUARE, IN_TRIANGLE, IN_L, IN_R, IN_START, IN_SELECT,
     IN_STICK_UP, IN_STICK_DOWN, IN_STICK_LEFT, IN_STICK_RIGHT,
     IN_ADS,   // aim down sights (the port's own feature, not a PSP button)
-    IN_RUN,   // keyboard movement at full stick (the game runs with the stick pushed all the way)
+    IN_WALK,  // keyboard movement at a walk (keys run by default: the stick pushed all the way)
     IN_CREEP, // keyboard movement at a slight push (slow, quiet walk; the game has no crouch)
     IN_COUNT
 };
 const char* kInputNames[IN_COUNT] = {"up", "down", "left", "right", "cross", "circle", "square", "triangle",
                                      "l", "r", "start", "select", "stick_up", "stick_down", "stick_left", "stick_right",
-                                     "aim_down_sights", "run", "creep"};
+                                     "aim_down_sights", "walk", "creep"};
 const uint32_t kInputButtons[12] = {
     psp::host::BTN_UP, psp::host::BTN_DOWN, psp::host::BTN_LEFT, psp::host::BTN_RIGHT, psp::host::BTN_CROSS,
     psp::host::BTN_CIRCLE, psp::host::BTN_SQUARE, psp::host::BTN_TRIANGLE, psp::host::BTN_LTRIGGER,
@@ -89,7 +89,8 @@ struct FrontSettings {
     std::string devLoadout = "0, 4, 6, 19, 23"; // the five weapons levels start with (ids, see LEEME)
     float volume = 1.0f;
     float deadzone = 0.2f;
-    float walkSpeed = 0.7f, creepSpeed = 0.45f; // stick push of the movement keys (run = 1)
+    float moveSpeed = 1.0f;  // stick push of the movement keys (1 = run, the game's top speed)
+    float walkSpeed = 0.7f, creepSpeed = 0.45f; // with the walk / creep key held
     // Mouse look (until the game's camera is driven directly: mapped onto the look buttons).
     float mouseSensX = 1.0f, mouseSensY = 1.0f;
     bool invertY = false;
@@ -174,6 +175,7 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& dir) {
     s.devLoadout = ini.get("dev", "loadout", s.devLoadout);
     s.volume = getF(ini, "audio", "volume", 1.0f);
     s.deadzone = getF(ini, "input", "deadzone", 0.2f);
+    s.moveSpeed = std::clamp(getF(ini, "input", "move_speed", 1.0f), 0.35f, 1.0f);
     s.walkSpeed = std::clamp(getF(ini, "input", "walk_speed", 0.7f), 0.35f, 1.0f);
     s.creepSpeed = std::clamp(getF(ini, "input", "creep_speed", 0.45f), 0.35f, 1.0f);
     s.mouseLookMode = (int)getF(ini, "input", "mouse_look", 1);
@@ -246,6 +248,7 @@ void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& dir) 
     ini.set("dev", "loadout", s.devLoadout);
     ini.set("audio", "volume", std::to_string(s.volume));
     ini.set("input", "deadzone", std::to_string(s.deadzone));
+    ini.set("input", "move_speed", std::to_string(s.moveSpeed));
     ini.set("input", "walk_speed", std::to_string(s.walkSpeed));
     ini.set("input", "creep_speed", std::to_string(s.creepSpeed));
     ini.set("input", "mouse_look", std::to_string(s.mouseLookMode));
@@ -432,9 +435,9 @@ void updateController(const FrontSettings& s, InputState& in, bool focused, floa
             psp::host::g_aim.pitch += r.y * k * s.padTurnRate * s.padSensY * lookScale * dt * (s.padInvertY ? -1.0f : 1.0f);
         }
     }
-    // Keys move at a walk; run pushes the stick all the way (the game's top speed), creep just
-    // past the game's dead zone (about 0.3).
-    const float keyStick = held[IN_CREEP] ? s.creepSpeed : (held[IN_RUN] ? 1.0f : s.walkSpeed);
+    // Keys run by default (the stick pushed all the way, the game's top speed); the walk key
+    // pushes it partly and creep just past the game's dead zone (about 0.3).
+    const float keyStick = held[IN_CREEP] ? s.creepSpeed : (held[IN_WALK] ? s.walkSpeed : s.moveSpeed);
     if (held[IN_STICK_LEFT]) ax = -keyStick;
     if (held[IN_STICK_RIGHT]) ax = keyStick;
     if (held[IN_STICK_UP]) ay = -keyStick;
@@ -604,7 +607,7 @@ const char* const kInputLabels[IN_COUNT] = {
     "Cruz - mirar abajo / aceptar", "Círculo - mirar a la derecha / atrás", "Cuadrado - mirar a la izquierda",
     "Triángulo - mirar arriba / atrás", "L - saltar", "R - disparar", "Start - pausa", "Select - visor",
     "Stick - avanzar", "Stick - retroceder", "Stick - paso a la izquierda", "Stick - paso a la derecha",
-    "Apuntar con la mira", "Correr", "Andar con sigilo"};
+    "Apuntar con la mira", "Andar (sin correr)", "Andar con sigilo"};
 
 // 0 keyboard, 1 mouse, 2 pad: a new binding replaces those of its own kind only.
 int bindingDevice(const ca::Binding& b) {

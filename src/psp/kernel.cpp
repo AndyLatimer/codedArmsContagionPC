@@ -963,7 +963,9 @@ int boot(const BootOptions& opt) {
                 if (t->state != TState::Dead) return false;
             return true;
         });
+        log("game ended: %s (status %d)", g_exit ? "exit requested" : "every guest thread has ended", g_exitStatus);
     }
+    dumpThreads();
     return g_exitStatus;
 }
 
@@ -1071,8 +1073,13 @@ static void registerCoreHle() {
     });
     auto terminate = [](Ctx* c) {
         std::lock_guard<std::mutex> lk(g_km);
+        // The calling thread (id 0 or its own) cannot be terminated: the kernel returns
+        // SCE_KERNEL_ERROR_ILLEGAL_THID (PPSSPP). The game does this when it leaves a level to
+        // the terminal; ending its main thread closed the game.
+        if (A(c, 0) == 0 || (t_self && (int)A(c, 0) == t_self->id)) { ret(c, 0x80020197); return; }
         Thread* t = findThread((int)A(c, 0));
         if (!t) { ret(c, ERR_UNKNOWN_THID); return; }
+        log("thread %d '%s' terminated by thread %d", t->id, t->name.c_str(), t_self ? t_self->id : 0);
         // The host thread stays blocked forever; it is never scheduled again.
         t->state = TState::Dead;
         t->waitCond = nullptr;

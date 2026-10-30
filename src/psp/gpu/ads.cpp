@@ -142,28 +142,64 @@ void AimDownSights::endFrame() {
             float zFront = 1e9f, zBack = -1e9f;
             for (size_t i : topIdx_) { zFront = std::min(zFront, gun_[i + 2]); zBack = std::max(zBack, gun_[i + 2]); }
             const float zCut = zFront + 0.25f * (zBack - zFront);
-            double fx = 0, fn = 0;
+            double fn = 0;
             float fy = -1e9f, fz = 0;
             for (size_t i : topIdx_) {
                 if (gun_[i + 2] > zCut) continue;
-                fx += gun_[i]; fn += 1;
+                fn += 1;
                 if (gun_[i + 1] > fy) { fy = gun_[i + 1]; fz = gun_[i + 2]; }
             }
-            sight_[0] = fn > 0 ? (float)(fx / fn) : (float)(sx / n);
             sight_[1] = fn > 0 ? fy : maxY;
             sight_[2] = fn > 0 ? fz : (float)(sz / n);
-            // Turn the barrel (b, d, 1) onto the z axis: yaw first, then pitch.
-            yaw_ = (float)std::atan(-std::clamp(b, -0.5, 0.5));
-            pitch_ = (float)std::atan2(std::clamp(d, -0.5, 0.5), std::sqrt(1 + b * b));
-            // Cant: the upper part of the weapon (slide, receiver), with the barrel's own
-            // line taken out, leans by dx/dy; turning about the line of sight by atan(dx/dy)
-            // stands it upright.
-            const double a = (sx - b * sz) / n;
+            // Horizontally the weapon is centred on its upper part's centre line (slide,
+            // receiver): the middle between its left and right sides in slices along the
+            // barrel, fitted as x = a + b z. The top edge alone is lopsided where the rear
+            // sight is, which turned the weapon and showed one side of the slide.
             const float band = maxY - 0.35f * (maxY - minY);
+            double a = (sx - b * sz) / n, bc = b;
+            {
+                float z0 = 1e9f, z1 = -1e9f;
+                for (size_t i = 0; i < gun_.size(); i += 3)
+                    if (gun_[i + 1] >= band) { z0 = std::min(z0, gun_[i + 2]); z1 = std::max(z1, gun_[i + 2]); }
+                constexpr int kSlices = 8;
+                float lo[kSlices], hi[kSlices];
+                double zs[kSlices] = {}, zn[kSlices] = {};
+                std::fill(std::begin(lo), std::end(lo), 1e9f);
+                std::fill(std::begin(hi), std::end(hi), -1e9f);
+                for (size_t i = 0; i < gun_.size() && z1 > z0; i += 3) {
+                    if (gun_[i + 1] < band) continue;
+                    const int k = std::min(kSlices - 1, (int)((gun_[i + 2] - z0) / (z1 - z0) * kSlices));
+                    lo[k] = std::min(lo[k], gun_[i]);
+                    hi[k] = std::max(hi[k], gun_[i]);
+                    zs[k] += gun_[i + 2];
+                    zn[k] += 1;
+                }
+                double cn = 0, cz = 0, czz = 0, cx = 0, cxz = 0;
+                for (int k = 0; k < kSlices; ++k) {
+                    if (zn[k] < 2 || hi[k] <= lo[k]) continue;
+                    const double z = zs[k] / zn[k], x = 0.5 * (lo[k] + hi[k]);
+                    cn += 1; cz += z; czz += z * z; cx += x; cxz += x * z;
+                }
+                const double cden = cn * czz - cz * cz;
+                if (cn >= 2 && cden > 1e-12) {
+                    bc = (cn * cxz - cx * cz) / cden;
+                    a = (cx - bc * cz) / cn;
+                } else if (cn >= 1) {
+                    bc = 0;
+                    a = cx / cn;
+                }
+            }
+            sight_[0] = (float)(a + bc * sight_[2]);
+            // Turn the barrel (bc, d, 1) onto the z axis: yaw first, then pitch.
+            yaw_ = (float)std::atan(-std::clamp(bc, -0.5, 0.5));
+            pitch_ = (float)std::atan2(std::clamp(d, -0.5, 0.5), std::sqrt(1 + bc * bc));
+            // Cant: the upper part of the weapon, with its centre line taken out, leans by
+            // dx/dy; turning about the line of sight by atan(dx/dy) stands it upright.
+            const double b2 = bc;
             double m = 0, sy2 = 0, syy = 0, sr = 0, sry = 0;
             for (size_t i = 0; i < gun_.size(); i += 3) {
                 if (gun_[i + 1] < band) continue;
-                const double y = gun_[i + 1], r = gun_[i] - (a + b * gun_[i + 2]);
+                const double y = gun_[i + 1], r = gun_[i] - (a + b2 * gun_[i + 2]);
                 m += 1; sy2 += y; syy += y * y; sr += r; sry += r * y;
             }
             const double dy = m * syy - sy2 * sy2;
