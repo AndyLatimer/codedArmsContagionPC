@@ -63,7 +63,7 @@ void readWeapon(uint32_t player) {
 // (+16) and pitch (+20) in radians; the game itself wraps the yaw and clamps the pitch after
 // that. The aim from the front end is added to those two deltas, so it goes through the same
 // path as the pad (collision, network, replay of the state) and is independent of the frame
-// rate: it is the motion accumulated since the last game frame.
+// rate: host::Aim::take() hands over the motion of the time this game frame covers.
 // The view direction is (cos p sin y, sin p, -cos p cos y): a larger yaw turns right and a
 // larger pitch looks up, while the front end's pitch grows downwards (screen space).
 extern "C" void ca_hook_player_turn(Ctx* c) {
@@ -84,14 +84,15 @@ extern "C" void ca_hook_player_turn(Ctx* c) {
     }
     static const bool trace = std::getenv("CA_HOOK_TRACE") != nullptr;
     std::lock_guard<std::mutex> lk(psp::host::g_aim.m);
+    double yaw = 0, pitch = 0;
+    if (psp::host::g_aim.enabled) psp::host::g_aim.take(yaw, pitch);
     if (trace)
         std::fprintf(stderr, "[HOOK] turn player=%08x pos=%.3f,%.3f,%.3f yaw=%f pitch=%f d=%f,%f aim=%f,%f\n", c->r[19],
                      rdf(c->r[18]), rdf(c->r[18] + 4), rdf(c->r[18] + 8), rdf(c->r[18] + 16), rdf(c->r[18] + 20),
-                     rdf(sp + 236), rdf(sp + 232), psp::host::g_aim.yaw, psp::host::g_aim.pitch);
-    if (!psp::host::g_aim.enabled || (psp::host::g_aim.yaw == 0 && psp::host::g_aim.pitch == 0)) return;
-    wrf(sp + 236, rdf(sp + 236) + psp::host::g_aim.yaw);
-    wrf(sp + 232, rdf(sp + 232) - psp::host::g_aim.pitch);
-    psp::host::g_aim.yaw = psp::host::g_aim.pitch = 0;
+                     rdf(sp + 236), rdf(sp + 232), yaw, pitch);
+    if (yaw == 0 && pitch == 0) return;
+    wrf(sp + 236, rdf(sp + 236) + (float)yaw);
+    wrf(sp + 232, rdf(sp + 232) - (float)pitch);
 }
 
 // Disc text patches applied while reading the ISO (IsoReader::addPatch). None yet.

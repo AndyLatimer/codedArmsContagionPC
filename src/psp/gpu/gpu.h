@@ -38,6 +38,7 @@ struct PresentInfo {
 // Executes queued frames (waiting up to timeoutMs for one). Returns true when a new frame was
 // presented; `out` then describes it.
 bool renderPump(PresentInfo& out, int timeoutMs);
+int queuedFrames(); // frames recorded by the game and not executed yet
 // Reads the visible region of the last presented frame as RGBA8888, top row first.
 bool readPresented(const PresentInfo& p, std::vector<uint32_t>& rgba, int& w, int& h);
 void renderShutdown();

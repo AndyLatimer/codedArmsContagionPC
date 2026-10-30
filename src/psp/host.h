@@ -3,6 +3,8 @@
 // (window, input, renderer, audio). Plain atomics/mutex-protected data only.
 #include <atomic>
 #include <cstdint>
+#include <chrono>
+#include <deque>
 #include <mutex>
 #include <vector>
 
@@ -43,12 +45,58 @@ extern std::mutex g_audioMutex;
 extern std::atomic<bool> g_audioConsumer;
 size_t audioQueuedFrames(int ch);
 
-// Direct aim: radians added to the player's yaw/pitch by the game hooks (game_hooks.cpp) the
-// next time the game updates the camera. The front end accumulates mouse motion here.
+// Direct aim: radians added to the player's yaw/pitch by the game hooks (game_hooks.cpp).
+// The front end adds motion with add() once per loop of its own (the display's rate); the game
+// takes it with take() once per game frame. A plain hand-over gave the game frames 0 or 2
+// loops' worth of motion whenever the two rates drifted apart: the camera moved in jumps while
+// everything else was smooth. take() instead follows the motion as a timeline, `delayUs` behind
+// real time, interpolated between the front end's samples, so each game frame gets the motion
+// of exactly the time it covers.
 struct Aim {
     std::mutex m;
-    float yaw = 0, pitch = 0;
     bool enabled = false;
+    double totalYaw = 0, totalPitch = 0;   // everything added so far
+    double takenYaw = 0, takenPitch = 0;   // what the game has taken
+    struct Sample { uint64_t us; double yaw, pitch; };
+    std::deque<Sample> samples;            // (time, totals) after each add
+    uint64_t delayUs = 20000;              // a little more than one display refresh
+
+    static uint64_t nowUs() {
+        return (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+                   std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+    // Caller holds m.
+    void add(double dyaw, double dpitch) {
+        enabled = true;
+        const uint64_t now = nowUs();
+        if (samples.empty()) samples.push_back({now - 1, totalYaw, totalPitch}); // motion starts now, not earlier
+        totalYaw += dyaw;
+        totalPitch += dpitch;
+        samples.push_back({now, totalYaw, totalPitch});
+        while (samples.size() > 64) samples.pop_front();
+    }
+    // Caller holds m. The motion due by now - delayUs (all of it once the samples are older).
+    void take(double& dyaw, double& dpitch) {
+        const uint64_t t = nowUs() - delayUs;
+        double y = totalYaw, p = totalPitch;
+        while (samples.size() >= 2 && samples[1].us <= t) samples.pop_front();
+        if (!samples.empty() && samples.front().us > t) {
+            y = takenYaw; // nothing due yet
+            p = takenPitch;
+        } else if (samples.size() >= 2) {
+            const Sample& a = samples[0];
+            const Sample& b = samples[1];
+            const double f = b.us > a.us ? (double)(t - a.us) / (double)(b.us - a.us) : 1.0;
+            y = a.yaw + (b.yaw - a.yaw) * f;
+            p = a.pitch + (b.pitch - a.pitch) * f;
+        } else if (samples.size() == 1) {
+            samples.clear(); // all due: the next motion starts a new timeline
+        }
+        dyaw = y - takenYaw;
+        dpitch = p - takenPitch;
+        takenYaw = y;
+        takenPitch = p;
+    }
 };
 extern Aim g_aim;
 

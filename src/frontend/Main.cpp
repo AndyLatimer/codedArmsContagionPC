@@ -430,9 +430,8 @@ void updateController(const FrontSettings& s, InputState& in, bool focused, floa
         if (mag > 0) {
             float k = std::pow(mag, s.padCurve) / mag;
             std::lock_guard<std::mutex> lk(psp::host::g_aim.m);
-            psp::host::g_aim.enabled = true;
-            psp::host::g_aim.yaw += r.x * k * s.padTurnRate * s.padSensX * lookScale * dt * (s.padInvertX ? -1.0f : 1.0f);
-            psp::host::g_aim.pitch += r.y * k * s.padTurnRate * s.padSensY * lookScale * dt * (s.padInvertY ? -1.0f : 1.0f);
+            psp::host::g_aim.add(r.x * k * s.padTurnRate * s.padSensX * lookScale * dt * (s.padInvertX ? -1.0f : 1.0f),
+                                 r.y * k * s.padTurnRate * s.padSensY * lookScale * dt * (s.padInvertY ? -1.0f : 1.0f));
         }
     }
     // Keys run by default (the stick pushed all the way, the game's top speed); the walk key
@@ -452,9 +451,8 @@ void updateController(const FrontSettings& s, InputState& in, bool focused, floa
     // mouse_look = 2 instead spends it as presses of the look buttons like the original pad.
     if (s.mouseLookMode == 1 && focused && SDL_GetRelativeMouseMode()) {
         std::lock_guard<std::mutex> lk(psp::host::g_aim.m);
-        psp::host::g_aim.enabled = true;
-        psp::host::g_aim.yaw += in.lookAccumX * kRadiansPerCount * lookScale;
-        psp::host::g_aim.pitch += in.lookAccumY * kRadiansPerCount * lookScale;
+        if (in.lookAccumX != 0 || in.lookAccumY != 0)
+            psp::host::g_aim.add(in.lookAccumX * kRadiansPerCount * lookScale, in.lookAccumY * kRadiansPerCount * lookScale);
         in.lookAccumX = in.lookAccumY = 0;
     } else if (s.mouseLookMode == 2 && focused && SDL_GetRelativeMouseMode()) {
         auto press = [&](const std::string& n) { int k = inputIndex(n); if (k >= 0) buttons |= kInputButtons[k]; };
@@ -1224,9 +1222,13 @@ int main(int argc, char** argv) {
         const Uint64 pumpStart = SDL_GetPerformanceCounter();
         int pumped = 0;
         if (psp::gpu::renderPump(p, 4)) { frame = p; haveFrame = true; ++pumped; ++s_presented; }
-        // Show the newest frame: frames left queued would make the game wait for the display.
-        // Bounded, so a slow GPU (or a software renderer) still lets input and the window run.
-        while (SDL_GetPerformanceCounter() - pumpStart < SDL_GetPerformanceFrequency() / 30 && psp::gpu::renderPump(p, 0)) {
+        // One game frame per display refresh: the game and the display both run near 60 Hz but
+        // not in phase, so draining every queued frame showed two in one refresh and none in the
+        // next (48 of 60 frames shown, a judder on every camera turn). Up to one frame stays
+        // queued; older ones are caught up only when the game gets further ahead (a slower
+        // display), and boundedly, so a slow GPU still lets input and the window run.
+        while (psp::gpu::queuedFrames() > 1 && SDL_GetPerformanceCounter() - pumpStart < SDL_GetPerformanceFrequency() / 30 &&
+               psp::gpu::renderPump(p, 0)) {
             frame = p;
             ++pumped;
         }

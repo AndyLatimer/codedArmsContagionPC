@@ -284,9 +284,7 @@ void controlThread(std::string path) {
                 float y = 0, p = 0;
                 std::sscanf(l.c_str(), "%*s %f %f", &y, &p);
                 std::lock_guard<std::mutex> lk(psp::host::g_aim.m);
-                psp::host::g_aim.enabled = true;
-                psp::host::g_aim.yaw += y;
-                psp::host::g_aim.pitch += p;
+                psp::host::g_aim.add(y, p);
             } else if (c == "memdump") {
                 // User RAM 0x08800000..0x0A000000 to a file
                 if (FILE* o = std::fopen(arg, "wb")) {

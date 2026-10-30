@@ -10,8 +10,7 @@
 //
 // The arms are the skinned draws of the weapon camera, the weapon the rest. Its sights are
 // its top edge, and the barrel direction is fitted through that edge. The alignment is
-// measured when aiming starts and then kept, so the weapon's own animations (recoil) still
-// show. The field of view is scaled relative to the game's (its sniper scope zooms on top).
+// measured every frame, so the game's own sway of the weapon does not shake the sights. The field of view is scaled relative to the game's (its sniper scope zooms on top).
 // Settings: host::g_adsSettings.
 #include <cstdint>
 #include <vector>
@@ -28,6 +27,11 @@ public:
     // `viewportScaleX`: the draw's viewport half width (240 full screen).
     void adjust(const float view[12], float viewportScaleX, float view44[16], float proj44[16]) const;
     // (observe and adjust are called in turn for each draw.)
+    // The draw just observed is the weapon, the arms or the muzzle flash: its view matrix is
+    // adjusted by applyWeapon() once the frame's weapon has been measured (endFrame), so the
+    // correction belongs to the same frame as the sway it removes.
+    bool isWeaponDraw(const float view[12]) const { return isWeaponCamera(view) || muzzleEffect_; }
+    void applyWeapon(float view44[16]) const;
     // A 2D (through mode) draw: true to drop it (the crosshair, while aiming).
     bool hide2D(const std::vector<Vertex>& verts) const;
     void endFrame(); // once per presented frame
@@ -39,14 +43,10 @@ private:
     double lastUs_ = 0;
     std::vector<float> gun_;        // weapon vertices this frame (view space, xyz)
     bool aligned_ = false;          // an alignment was measured for this aim
-    size_t alignedVerts_ = 0;       // weapon vertices when it was measured
-    int changed_ = 0;               // frames with a different weapon
     float sight_[3] = {0, 0, 0};    // sight point (view space)
     float yaw_ = 0, pitch_ = 0;     // rotation that puts the barrel along -z
     float roll_ = 0;                // and the weapon upright (the hip pose is canted)
     std::vector<size_t> topIdx_;    // the weapon's top-edge vertices (offsets into gun_)
-    float refTop_[2] = {0, 0};      // their mean x, y when aiming started
-    float sway_[2] = {0, 0};        // their smoothed movement since then
     float adsMat_[16];              // current weapon camera adjustment (column-major)
     float fovScale_ = 1;            // level projection scale (> 1 narrows the view)
     bool muzzleEffect_ = false;     // the draw being observed: a level-camera effect at the muzzle
