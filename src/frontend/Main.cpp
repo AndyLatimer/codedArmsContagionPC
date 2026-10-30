@@ -103,7 +103,6 @@ struct FrontSettings {
     float normalFov = 85.0f, adsFov = 65.0f;
     float adsSens = 0.65f;   // look sensitivity multiplier while aiming
     bool adsHideCrosshair = true, adsAllowFire = true;
-    float adsSway = 1.0f;    // the game's weapon sway kept while aiming (0 = sights locked)
     // weapons.ini: [Weapon.NAME] (the game's internal name, e.g. g01) overrides of the above.
     struct WeaponAds {
         int enabled = -1;                    // -1: as [ADS]
@@ -202,7 +201,6 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& dir) {
     s.adsFov = std::clamp(getF(ini, "ADS", "ADSFOV", 65.0f), 20.0f, 120.0f);
     s.adsSens = std::clamp(getF(ini, "ADS", "ADSMouseSensitivityMultiplier", 0.65f), 0.05f, 2.0f);
     s.adsHideCrosshair = getB(ini, "ADS", "HideCrosshairWhileADS", true);
-    s.adsSway = std::clamp(getF(ini, "ADS", "WeaponSway", 1.0f), 0.0f, 1.0f);
     s.adsAllowFire = getB(ini, "ADS", "AllowFiringWhileADS", true);
     if (!ini.has("Weapon.g01", "Name")) { // first run: the one weapon identified so far
         ini.set("Weapon.g01", "Name", "Pistol");
@@ -262,7 +260,6 @@ void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& dir) 
     ini.set("ADS", "ADSFOV", fmt(s.adsFov));
     ini.set("ADS", "ADSMouseSensitivityMultiplier", fmt(s.adsSens));
     ini.set("ADS", "HideCrosshairWhileADS", s.adsHideCrosshair ? "true" : "false");
-    ini.set("ADS", "WeaponSway", fmt(s.adsSway));
     ini.set("ADS", "AllowFiringWhileADS", s.adsAllowFire ? "true" : "false");
     ini.set("input", "invert_x", s.invertX ? "1" : "0");
     ini.set("input", "deadzone_right", std::to_string(s.deadzoneRight));
@@ -320,7 +317,6 @@ void applyAdsSettings(const FrontSettings& s) {
     a.normalFov = s.normalFov;
     a.adsFov = w && w->adsFov > 0 ? w->adsFov : s.adsFov;
     a.hideCrosshair = s.adsHideCrosshair;
-    a.weaponSway = s.adsSway;
     a.sightX = w ? w->sightX : 0.0f;
     a.sightY = w ? w->sightY : 0.0f;
     a.weaponCloser = w ? w->closer : 0.2f;
@@ -767,7 +763,6 @@ std::vector<ca::MenuItem> buildMenu(FrontSettings& s, SDL_Window* win, MenuState
     m.push_back(slider("Campo de visión al apuntar", s.adsFov, 20, 120, 1, false, [&s] { applyAdsSettings(s); }));
     m.push_back(slider("Duración de la transición (s)", s.adsTransition, 0, 1, 0.02f, false, [&s] { applyAdsSettings(s); }));
     m.push_back(toggle("Ocultar la cruz al apuntar", s.adsHideCrosshair, [&s] { applyAdsSettings(s); }));
-    m.push_back(slider("Balanceo del arma al apuntar", s.adsSway, 0, 1, 0.1f, true, [&s] { applyAdsSettings(s); }));
     m.push_back(toggle("Disparar mientras se apunta", s.adsAllowFire));
 
     m.push_back(header("Mando"));
@@ -833,7 +828,6 @@ std::vector<ca::MenuItem> buildMenu(FrontSettings& s, SDL_Window* win, MenuState
         {"Campo de visión al apuntar", "Campo de visión mientras se apunta con la mira (menor = más zoom)."},
         {"Duración de la transición (s)", "Tiempo que tarda el arma en ir de la cadera a la mira."},
         {"Ocultar la cruz al apuntar", "Quita la cruz del centro mientras se apunta con la mira."},
-        {"Balanceo del arma al apuntar", "100 %: el arma se mueve como en el juego (retroceso, balanceo); 0 %: la mira queda fija en el centro."},
         {"Disparar mientras se apunta", "Si se desactiva, disparar no hace nada mientras se apunta."},
         {"Zona muerta del stick izquierdo", "Movimiento del stick que se ignora (desgaste del mando)."},
         {"Zona muerta del stick derecho", "Movimiento del stick que se ignora (desgaste del mando)."},

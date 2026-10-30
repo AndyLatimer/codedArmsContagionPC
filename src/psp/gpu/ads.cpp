@@ -14,6 +14,7 @@ namespace psp::gpu {
 namespace {
 
 constexpr float kGameFovDeg = 80.0f; // the game's own horizontal field of view (projection 1.192)
+constexpr float kSteady = 0.85f;     // share of the weapon's sway taken out while aiming
 constexpr float kDegToRad = 3.14159265f / 180.0f;
 
 void identity(float* m) { std::memset(m, 0, 16 * sizeof(float)); m[0] = m[5] = m[10] = m[15] = 1; }
@@ -111,15 +112,16 @@ void AimDownSights::endFrame() {
     lastUs_ = now;
     const bool want = host::g_ads.load() && cfg.enabled.load();
 
-    if (want && t_ == 0) aligned_ = baseValid_ = false;
+    // Measure the weapon when aiming starts (from hip), then keep that alignment; measure again
+    // when a different weapon appears (its vertex count changes for a few frames).
+    if (want && t_ == 0) aligned_ = false;
     const size_t gunVerts = gun_.size() / 3;
-    // The weapon is measured every frame while aiming. The alignment taken when aiming starts
-    // (`base`) puts the sights on the centre and is then kept, so the game's own sway, recoil
-    // and bob still move the weapon naturally; WeaponSway (0..1) blends towards the current
-    // frame's measurement, which holds the sights still (0 = locked on the centre). Applied to
-    // the same frame's weapon draws (gpu.cpp), never a frame late.
-    bool measured = false;
-    if (want && gunVerts >= 12) {
+    if (want && aligned_ && gunVerts) {
+        const bool other = gunVerts * 4 < alignedVerts_ * 3 || gunVerts * 3 > alignedVerts_ * 4;
+        changed_ = other ? changed_ + 1 : 0;
+        if (changed_ >= 5) { aligned_ = false; changed_ = 0; }
+    }
+    if (want && !aligned_ && gunVerts >= 12) {
         float maxY = -1e9f, minY = 1e9f;
         for (size_t i = 0; i < gun_.size(); i += 3) { maxY = std::max(maxY, gun_[i + 1]); minY = std::min(minY, gun_[i + 1]); }
         const float edge = maxY - 0.12f * (maxY - minY);
@@ -203,28 +205,24 @@ void AimDownSights::endFrame() {
             const double dy = m * syy - sy2 * sy2;
             roll_ = m >= 6 && dy > 1e-12 ? (float)std::atan(std::clamp((m * sry - sr * sy2) / dy, -0.5, 0.5)) : 0.0f;
             aligned_ = true;
-            measured = true;
+            alignedVerts_ = gunVerts;
+            refTop_[0] = (float)(sx / n);
+            refTop_[1] = (float)(sy / n);
+            sway_[0] = sway_[1] = 0;
         }
-    }
-    if (measured) {
-        // A different weapon (its vertex count changes) takes a new base alignment.
-        if (baseValid_ && (gunVerts * 4 < baseVerts_ * 3 || gunVerts * 3 > baseVerts_ * 4)) baseValid_ = false;
-        if (!baseValid_) {
-            std::copy(sight_, sight_ + 3, baseSight_);
-            baseYaw_ = yaw_; basePitch_ = pitch_; baseRoll_ = roll_;
-            baseVerts_ = gunVerts;
-            baseValid_ = true;
-        }
-        const float k = std::clamp(cfg.weaponSway.load(), 0.0f, 1.0f);
-        for (int i = 0; i < 3; ++i) sight_[i] += k * (baseSight_[i] - sight_[i]);
-        yaw_ += k * (baseYaw_ - yaw_);
-        pitch_ += k * (basePitch_ - pitch_);
-        roll_ += k * (baseRoll_ - roll_);
+    } else if (want && aligned_ && gunVerts == alignedVerts_ && !topIdx_.empty()) {
+        // Steady aim: the same top-edge vertices as when aiming started; most of the weapon's
+        // own sway and bob since then is taken out (smoothed, so it does not shake).
+        double mx = 0, my = 0;
+        for (size_t i : topIdx_) { mx += gun_[i]; my += gun_[i + 1]; }
+        const float dx = (float)(mx / topIdx_.size()) - refTop_[0], dy = (float)(my / topIdx_.size()) - refTop_[1];
+        sway_[0] += (dx - sway_[0]) * 0.5f;
+        sway_[1] += (dy - sway_[1]) * 0.5f;
     }
     static const bool dbg = std::getenv("CA_ADS_DEBUG") != nullptr;
     if (dbg && want)
-        std::fprintf(stderr, "[ADS] gun %zu aligned %d t %.2f sight %.3f,%.3f,%.3f yaw %.3f pitch %.3f roll %.3f\n",
-                     gunVerts, (int)aligned_, t_, sight_[0], sight_[1], sight_[2], yaw_, pitch_, roll_);
+        std::fprintf(stderr, "[ADS] gun %zu aligned %d t %.2f sight %.3f,%.3f,%.3f yaw %.3f pitch %.3f roll %.3f sway %.4f,%.4f\n",
+                     gunVerts, (int)aligned_, t_, sight_[0], sight_[1], sight_[2], yaw_, pitch_, roll_, sway_[0], sway_[1]);
     gun_.clear();
 
     // Towards the target at a constant rate (independent of the frame rate), without
@@ -248,21 +246,17 @@ void AimDownSights::endFrame() {
     rotZ(r, roll_ * s);
     rotX(b, pitch_ * s);
     rotY(c, yaw_ * s);
-    translate(d, -sx, -sy, -sight_[2]);
+    translate(d, -sx - sway_[0] * kSteady * s, -sy - sway_[1] * kSteady * s, -sight_[2]);
     mul(a, r, adsMat_);
     mul(adsMat_, b, adsMat_);
     mul(adsMat_, c, adsMat_);
     mul(adsMat_, d, adsMat_);
 }
 
-void AimDownSights::applyWeapon(float view44[16]) const {
-    if (t_ > 0) mul(adsMat_, view44, view44);
-}
-
 void AimDownSights::adjust(const float view[12], float viewportScaleX, float view44[16], float proj44[16]) const {
-    (void)view44;
-    if (isWeaponDraw(view)) return; // applyWeapon() at the end of the frame
-    if (std::fabs(viewportScaleX) > 200 && fovScale_ != 1) { // the level (full screen; the radar is small)
+    if (isWeaponCamera(view) || muzzleEffect_) {
+        if (t_ > 0) mul(adsMat_, view44, view44);
+    } else if (std::fabs(viewportScaleX) > 200 && fovScale_ != 1) { // the level (full screen; the radar is small)
         proj44[0] *= fovScale_;
         proj44[5] *= fovScale_;
     }

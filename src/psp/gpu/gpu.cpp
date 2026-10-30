@@ -355,7 +355,6 @@ private:
     }
 
     AimDownSights ads_;
-    std::vector<size_t> weaponUbos_; // this frame's weapon draws (ads_.applyWeapon at its end)
     // Debugging (CA_MAP_DEBUG): view matrices of the frame's 3D draws.
     std::map<std::vector<float>, int> dbgViews_;
     void present() {
@@ -394,9 +393,6 @@ private:
         frame_->number = ++frameNumber_;
         if (g_matrixDumpFrames > 0) std::fprintf(stderr, "[MAT] ---- frame %llu end\n", (unsigned long long)frameNumber_), --g_matrixDumpFrames;
         ads_.endFrame();
-        for (size_t i : weaponUbos_)
-            if (i < frame_->ubos.size()) ads_.applyWeapon(frame_->ubos[i].view);
-        weaponUbos_.clear();
         minimap::endFrame();
         {
             ScopedUs waitPerf(g_perf.waitUs);
@@ -1168,7 +1164,6 @@ void Recorder::emit(std::vector<Vertex>& vin, int prim, bool through, bool hasCo
     else if (ads_.hide2D(vin)) return;
     buildUbo(ubo, target, through, hasColor);
     if (!through) ads_.adjust(mtx_.view, ubo.vpScale[0], ubo.view, ubo.proj);
-    const bool weaponDraw = !through && ads_.isWeaponDraw(mtx_.view);
 
     premulBlend_ = false;
     alphaOverride_ = false;
@@ -1281,7 +1276,6 @@ void Recorder::emit(std::vector<Vertex>& vin, int prim, bool through, bool hasCo
         frame_->verts.insert(frame_->verts.end(), p, p + kFloatsPerVertex);
     }
     op.ubo = frame_->ubos.size();
-    if (weaponDraw) weaponUbos_.push_back(op.ubo);
     frame_->ubos.push_back(ubo);
     frame_->ops.push_back(op);
 }

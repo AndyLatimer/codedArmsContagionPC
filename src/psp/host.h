@@ -114,7 +114,6 @@ struct AdsSettings {
     std::atomic<bool> hideCrosshair{true};   // while aiming
     std::atomic<float> weaponCloser{0.2f};   // share of its distance the weapon comes towards the eye
     std::atomic<float> sightX{0}, sightY{0}; // fine tuning of the sight point (weapon units, + = right/up)
-    std::atomic<float> weaponSway{1.0f};     // the game's weapon sway kept while aiming (0 = locked)
 };
 extern AdsSettings g_adsSettings;
 
