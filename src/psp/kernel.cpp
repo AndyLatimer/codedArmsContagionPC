@@ -5,6 +5,10 @@
 // guest code at a time (g_current). Context switches happen only inside HLE calls, which
 // matches the PSP kernel (no time slicing between threads of equal priority; a thread
 // runs until it blocks or a higher-priority thread is woken).
+#ifdef _WIN32
+#include <windows.h>
+#include <timeapi.h>
+#endif
 #include "psp/kernel.h"
 #include "psp/gpu/gpu.h"
 
@@ -186,6 +190,32 @@ static uint64_t earliestDeadline() {
 
 static void deliverInterrupts(std::unique_lock<std::mutex>& lk);
 
+// Waits on g_idleCv until `until` (guest time) or a notification. The game's threads sleep for
+// fractions of a millisecond (the sound mixer after each grain), but timed waits end on the
+// system timer's ticks: 1 ms with timeBeginPeriod(1) on Windows, 15.6 ms without. Late wakeups
+// made the sound mixer fall behind real time and the game wait for it forever on a Windows PC,
+// so the last 2 ms of a wait are spent yielding the CPU instead of sleeping.
+// CA_SIM_WINTIMER=<tick us> (testing): timed waits end on the next tick, like Windows.
+static void idleWaitUntil(std::unique_lock<std::mutex>& lk, uint64_t until) {
+    static const uint64_t simTick = std::getenv("CA_SIM_WINTIMER") ? std::strtoull(std::getenv("CA_SIM_WINTIMER"), nullptr, 10) : 0;
+    static const bool noSpin = std::getenv("CA_NO_IDLE_SPIN") != nullptr; // testing: the old behaviour
+    constexpr uint64_t kSpinUs = 2000;
+    const uint64_t now = nowUs();
+    if (until <= now) return;
+    if (noSpin || until - now > kSpinUs) {
+        uint64_t sleepUntil = noSpin ? until : until - kSpinUs;
+        if (simTick) { // host time of the next tick at or after the deadline
+            const uint64_t h = hostUs() + (sleepUntil - now);
+            sleepUntil = now + ((h + simTick - 1) / simTick * simTick - hostUs());
+        }
+        g_idleCv.wait_until(lk, g_bootTime + std::chrono::microseconds(sleepUntil + (hostUs() - now)));
+        return;
+    }
+    lk.unlock();
+    std::this_thread::yield();
+    lk.lock();
+}
+
 // Gives the CPU away. `self` must already be in its new state (Ready/Waiting/Dead).
 // Returns when `self` is scheduled again (or immediately when it is dead).
 static void schedule(std::unique_lock<std::mutex>& lk, Thread* self) {
@@ -217,7 +247,7 @@ static void schedule(std::unique_lock<std::mutex>& lk, Thread* self) {
         uint64_t dl = earliestDeadline();
         uint64_t vbl = nowUs() + 16683; // wake at least once per frame to deliver vblank
         uint64_t until = dl ? std::min(dl, vbl) : vbl;
-        g_idleCv.wait_until(lk, g_bootTime + std::chrono::microseconds(until));
+        idleWaitUntil(lk, until);
     }
 }
 
@@ -870,6 +900,9 @@ void requestExit() { g_exitRequested = true; }
 int boot(const BootOptions& opt) {
     g_trace = opt.traceHle;
     g_bootTime = std::chrono::steady_clock::now();
+#ifdef _WIN32
+    timeBeginPeriod(1); // 1 ms timer ticks for the threads' timed waits (idleWaitUntil)
+#endif
     if (!initMemory()) { log("cannot allocate guest memory"); return 1; }
     if (!g_iso.open(opt.isoPath)) { log("cannot open %s", opt.isoPath.c_str()); return 1; }
     installTextPatches(g_iso);
