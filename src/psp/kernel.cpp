@@ -117,6 +117,7 @@ struct Thread {
     int wakeupCount = 0;
     std::function<void()> hostBody; // HLE helper thread: runs host code instead of guest code
     int lastImport = -1;            // debugging (dumpThreads): its last system call
+    uint64_t hleCalls = 0, hleCallsDumped = 0; // debugging: system calls made (since the last dump)
     uint32_t lastImportRa = 0;
 };
 
@@ -498,7 +499,7 @@ extern "C" void hle_call(Ctx* c, int idx) {
     ImportSlot& s = g_imports[(size_t)idx];
     t_lastImport = idx;
     t_lastImportRa = c->r[31];
-    if (t_self) { t_self->lastImport = idx; t_self->lastImportRa = c->r[31]; }
+    if (t_self) { t_self->lastImport = idx; t_self->lastImportRa = c->r[31]; ++t_self->hleCalls; }
     static const bool stats = std::getenv("CA_HLE_STATS") != nullptr;
     static const bool byThread = stats && std::getenv("CA_HLE_STATS")[0] == 't';
     if (stats) hleStats(s.name, byThread ? (uint32_t)currentThreadId() : c->r[31]);
@@ -524,9 +525,19 @@ static void dumpEventFlags(); // caller holds g_km
 void dumpThreads() {
     static const char* kState[] = {"dormant", "ready", "running", "waiting", "dead"};
     std::lock_guard<std::mutex> lk(g_km);
+    const uint64_t now = nowUs(), me = meBusyUntilUs();
+    log("[threads] guest time %.3fs, Media Engine busy for %.3f ms more, current %d", now / 1e6,
+        me > now ? (me - now) / 1e3 : 0.0, g_current ? g_current->id : 0);
     for (auto& [id, t] : g_threads) {
         const char* imp = t->lastImport >= 0 && (size_t)t->lastImport < g_imports.size() ? g_imports[(size_t)t->lastImport].name.c_str() : "-";
-        log("[threads] %d '%s' prio %x %s, last call %s (ra %08x)", id, t->name.c_str(), t->priority, kState[(int)t->state], imp, t->lastImportRa);
+        char wait[96] = "";
+        if (t->state == TState::Waiting)
+            std::snprintf(wait, sizeof wait, ", %s, deadline %s%.3f ms", t->waitCond ? "condition" : "no condition",
+                          !t->deadline ? "none " : (t->deadline >= now ? "in " : "passed "),
+                          !t->deadline ? 0.0 : (t->deadline >= now ? (t->deadline - now) / 1e3 : (now - t->deadline) / 1e3));
+        log("[threads] %d '%s' prio %x %s, last call %s (ra %08x), %llu calls since last dump%s", id, t->name.c_str(), t->priority,
+            kState[(int)t->state], imp, t->lastImportRa, (unsigned long long)(t->hleCalls - t->hleCallsDumped), wait);
+        t->hleCallsDumped = t->hleCalls;
     }
     dumpEventFlags();
 }

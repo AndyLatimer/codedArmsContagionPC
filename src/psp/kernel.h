@@ -68,6 +68,7 @@ void dumpThreads();
 bool waitUntil(const std::function<bool()>& ready, uint64_t timeoutUs, bool processCallbacks = false);
 // Media Engine job queue (hle_sas.cpp): microseconds until a job of `us` queued now finishes.
 uint64_t meScheduleJob(uint64_t us);
+uint64_t meBusyUntilUs(); // debugging: when the Media Engine's queued jobs end (nowUs time)
 // Allocates guest memory from the top of the user partition for HLE state that lives in PSP
 // memory (e.g. ATRAC contexts). Returns 0 when out of memory.
 uint32_t allocHleMemory(uint32_t size, const char* tag);

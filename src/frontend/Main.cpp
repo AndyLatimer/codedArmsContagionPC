@@ -993,11 +993,17 @@ int main(int argc, char** argv) {
     static std::atomic<uint64_t> s_presented{0};
     static std::atomic<bool> s_dumpThreads{false};
     std::thread([] {
-        int seconds = 0;
+        int seconds = 0, stalled = 0;
+        uint32_t lastFrames = 0;
         for (;;) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             ++seconds;
-            const bool dump = s_dumpThreads.exchange(false) || seconds == 15 || seconds == 30 || seconds == 60;
+            // The game's own frames stopped advancing (paused menus aside): dump every 5 s.
+            const uint32_t frames = psp::host::g_display.frameCount.load();
+            stalled = frames == lastFrames ? stalled + 1 : 0;
+            lastFrames = frames;
+            const bool dump = s_dumpThreads.exchange(false) || seconds == 15 || seconds == 30 || seconds == 60 ||
+                              (stalled >= 5 && stalled % 5 == 0 && stalled <= 60);
             if (seconds % 5 == 0 || dump)
                 std::fprintf(stderr, "[watchdog] %ds: guest frames %u, presented %llu, guest time %.1fs\n", seconds,
                              psp::host::g_display.frameCount.load(), (unsigned long long)s_presented.load(),

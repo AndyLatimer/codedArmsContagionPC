@@ -3,6 +3,7 @@
 // Core/HLE/sceSas.cpp (GPL-2.0-or-later); the mixer itself is PPSSPP's SasAudio/SasReverb
 // (src/psp/ppsspp/). Mixing runs synchronously on the calling thread, which then waits for
 // as long as the Media Engine would take to mix the grain.
+#include <algorithm>
 #include <mutex>
 #include <cstdarg>
 #include <cstdio>
@@ -52,9 +53,12 @@ uint64_t g_meBusyUntilUs = 0;
 
 bool badVoice(int v) { return v < 0 || v >= PSP_SAS_VOICES_MAX; }
 
-// Returns `result` to the guest once the mix job would have finished.
+// Returns `result` to the guest once the mix job would have finished. A grain takes the Media
+// Engine at most a few milliseconds; the estimate is bounded so a bad value cannot park the
+// game's sound thread (and the game waiting for it).
 void delaySasResult(Ctx* c, uint32_t result) {
-    uint64_t us = meScheduleJob((uint64_t)g_sas->EstimateMixUs());
+    const int est = g_sas->EstimateMixUs();
+    uint64_t us = meScheduleJob((uint64_t)std::clamp(est, 0, 20000));
     ret(c, result);
     delayCurrentThread(us);
 }
@@ -67,10 +71,15 @@ uint64_t meScheduleJob(uint64_t us) {
     static std::mutex m;
     std::lock_guard<std::mutex> lk(m);
     uint64_t now = nowUs();
+    us = std::min<uint64_t>(us, 50000);
+    // Never more than 100 ms of queued work: the queue cannot run away from real time.
+    if (g_meBusyUntilUs > now + 100000) g_meBusyUntilUs = now;
     uint64_t start = std::max(now, g_meBusyUntilUs);
     g_meBusyUntilUs = start + us;
     return g_meBusyUntilUs - now;
 }
+
+uint64_t meBusyUntilUs() { return g_meBusyUntilUs; }
 
 void registerSasHle() {
     g_sas = new SasInstance();
