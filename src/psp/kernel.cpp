@@ -587,7 +587,14 @@ extern "C" void rt_preempt(Ctx* c) {
 static void preemptionTimer() {
     uint64_t lastFrame = 0;
     while (!g_exit) {
+#ifdef _WIN32
+        // MinGW's sleep_for rounds sub-millisecond sleeps down to no sleep at all: this thread
+        // would spin, taking g_km thousands of times per millisecond from the running game.
+        // 1 ms is precise with timeBeginPeriod(1) (boot).
+        Sleep(1);
+#else
         std::this_thread::sleep_for(std::chrono::microseconds(500));
+#endif
         std::lock_guard<std::mutex> lk(g_km);
         Thread* cur = g_current;
         if (!cur || cur->state != TState::Running) continue;

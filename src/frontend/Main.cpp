@@ -866,6 +866,15 @@ int main(int argc, char** argv) {
             *static_cast<volatile int*>(nullptr) = 1;
         }).detach();
     std::fprintf(stderr, "[build] Coded Arms: Contagion PC, built %s %s\n", __DATE__, __TIME__);
+    // Performance counters in the log once a second (renderer, frame work, presented frames),
+    // so a report from a slow PC shows where the time goes.
+    if (!std::getenv("CA_PERF")) {
+#ifdef _WIN32
+        _putenv("CA_PERF=1");
+#else
+        setenv("CA_PERF", "1", 0);
+#endif
+    }
     FrontSettings s;
     ca::Ini ini;
     const std::string cfgPath = ca::resolveConfigPath();

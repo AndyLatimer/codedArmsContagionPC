@@ -35,7 +35,11 @@ namespace {
 struct PerfCounters {
     std::atomic<uint64_t> flips{0}, waitUs{0}, patchUs{0}, drawUs{0}, texUs{0}, execUs{0}, presents{0}, patches{0}, draws{0}, verts{0};
 } g_perf;
-const bool g_perfOn = std::getenv("CA_PERF") != nullptr;
+// Read on first use: the front end turns CA_PERF on in main(), after static initialisation.
+bool perfOn() {
+    static const bool on = std::getenv("CA_PERF") != nullptr;
+    return on;
+}
 struct ScopedUs {
     std::atomic<uint64_t>& acc;
     std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
@@ -1478,7 +1482,7 @@ void debugFrame(const Frame& fr) {
 void execFrame(Frame& fr, PresentInfo& pinfo, bool& presented) {
     ScopedUs perf(g_perf.execUs);
     g_perf.verts += fr.verts.size() / kFloatsPerVertex;
-    if (g_perfOn) perfReport();
+    if (perfOn()) perfReport();
     debugFrame(fr);
     glBindVertexArray(g_exec.vao);
     glBindBuffer(GL_ARRAY_BUFFER, g_exec.vbo);
