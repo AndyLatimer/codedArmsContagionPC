@@ -865,6 +865,7 @@ int main(int argc, char** argv) {
             std::this_thread::sleep_for(std::chrono::seconds(5));
             *static_cast<volatile int*>(nullptr) = 1;
         }).detach();
+    std::fprintf(stderr, "[build] Coded Arms: Contagion PC, built %s %s\n", __DATE__, __TIME__);
     FrontSettings s;
     ca::Ini ini;
     const std::string cfgPath = ca::resolveConfigPath();
@@ -985,6 +986,25 @@ int main(int argc, char** argv) {
         (void)r;
     });
     game.detach();
+
+    // Watchdog for the log: a heartbeat every 5 s (guest frames, presented frames, vblank count)
+    // and the guest threads' states at 15, 30 and 60 s and on F12, so a report shows where a
+    // stalled game waits.
+    static std::atomic<uint64_t> s_presented{0};
+    static std::atomic<bool> s_dumpThreads{false};
+    std::thread([] {
+        int seconds = 0;
+        for (;;) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            ++seconds;
+            const bool dump = s_dumpThreads.exchange(false) || seconds == 15 || seconds == 30 || seconds == 60;
+            if (seconds % 5 == 0 || dump)
+                std::fprintf(stderr, "[watchdog] %ds: guest frames %u, presented %llu, guest time %.1fs\n", seconds,
+                             psp::host::g_display.frameCount.load(), (unsigned long long)s_presented.load(),
+                             psp::kernel::nowUs() / 1e6);
+            if (dump) psp::kernel::dumpThreads();
+        }
+    }).detach();
 
     SDL_SetRelativeMouseMode(s.mouseLook ? SDL_TRUE : SDL_FALSE);
     const bool perf = std::getenv("CA_PERF") != nullptr;
@@ -1112,6 +1132,8 @@ int main(int argc, char** argv) {
                     psp::gpu::minimap::setEnabled(s.minimap);
                 } else if (s.dev && (e.key.keysym.scancode == SDL_SCANCODE_F5 || e.key.keysym.scancode == SDL_SCANCODE_F6)) {
                     psp::host::g_dev.cycle = e.key.keysym.scancode == SDL_SCANCODE_F6 ? 1 : -1;
+                } else if (e.key.keysym.scancode == SDL_SCANCODE_F12 && !e.key.repeat) {
+                    s_dumpThreads = true; // the guest threads' states to the log
                 } else if (e.key.keysym.scancode == SDL_SCANCODE_F1 && !e.key.repeat) {
                     in.openPcSettings = true; // the PC settings (the game pauses while they are open)
                 } else if (e.key.keysym.scancode == SDL_SCANCODE_F10) {
@@ -1183,7 +1205,7 @@ int main(int argc, char** argv) {
         psp::gpu::PresentInfo p;
         const Uint64 pumpStart = SDL_GetPerformanceCounter();
         int pumped = 0;
-        if (psp::gpu::renderPump(p, 4)) { frame = p; haveFrame = true; ++pumped; }
+        if (psp::gpu::renderPump(p, 4)) { frame = p; haveFrame = true; ++pumped; ++s_presented; }
         // Show the newest frame: frames left queued would make the game wait for the display.
         // Bounded, so a slow GPU (or a software renderer) still lets input and the window run.
         while (SDL_GetPerformanceCounter() - pumpStart < SDL_GetPerformanceFrequency() / 30 && psp::gpu::renderPump(p, 0)) {

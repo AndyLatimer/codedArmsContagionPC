@@ -411,6 +411,8 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--wav") && i + 1 < argc) {
             g_wav = std::fopen(argv[++i], "wb");
             if (g_wav) { writeWavHeader(g_wav, 0); std::thread(wavThread).detach(); }
+        } else if (!std::strcmp(argv[i], "--audio-stall")) { // test: a sound card that never consumes
+            psp::host::g_audioConsumer = true;
         }
     }
     if (opt.isoPath.empty()) {

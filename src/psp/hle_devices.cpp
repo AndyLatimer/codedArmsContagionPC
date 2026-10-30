@@ -252,8 +252,7 @@ void registerDeviceHle() {
     });
     registerHle("sceCtrlGetSamplingMode", [](Ctx* c) { if (A(c, 0)) write32(A(c, 0), 1); ret(c, 0); });
     registerHle("sceRtcGetAccumulativeTime", [](Ctx* c) {
-        auto now = std::chrono::system_clock::now().time_since_epoch();
-        uint64_t us = (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(now).count() + 62135596800000000ull;
+        const uint64_t us = kernel::wallClockUs() + 62135596800000000ull; // ticks since year 1
         c->r[2] = (uint32_t)us;
         c->r[3] = (uint32_t)(us >> 32);
     });
@@ -282,8 +281,7 @@ void registerDeviceHle() {
         ret(c, 0);
     });
     registerHle("sceRtcGetCurrentTick", [](Ctx* c) {
-        auto now = std::chrono::system_clock::now().time_since_epoch();
-        uint64_t us = (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(now).count() + 62135596800000000ull;
+        const uint64_t us = kernel::wallClockUs() + 62135596800000000ull; // ticks since year 1
         write32(A(c, 0), (uint32_t)us);
         write32(A(c, 0) + 4, (uint32_t)(us >> 32));
         ret(c, 0);

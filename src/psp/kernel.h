@@ -51,6 +51,10 @@ bool callImportByAddress(Ctx* c, uint32_t addr);
 
 // Scheduling helpers for HLE modules (call with no kernel lock held) -----------------
 uint64_t nowUs();                         // microseconds since boot (stops while paused)
+// Wall clock in microseconds since 1970: the system time read once at boot, advanced by nowUs().
+// The system clock itself is coarse on Windows (~15.6 ms steps), so frame times measured with
+// it (sceRtcGetAccumulativeTime) could be 0 and stall the game's loading screens.
+uint64_t wallClockUs();
 // Pauses the game (front end menus): the guest clock stops and guest threads stop at their
 // next system call until it is resumed.
 void setPaused(bool paused);

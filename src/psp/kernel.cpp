@@ -74,6 +74,11 @@ uint64_t nowUs() {
     const uint64_t at = g_pausedAt.load();
     return (at ? at : hostUs()) - g_pausedTotal.load();
 }
+uint64_t wallClockUs() {
+    static const uint64_t epochAtBoot = (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+                                            std::chrono::system_clock::now().time_since_epoch()).count() - nowUs();
+    return epochAtBoot + nowUs();
+}
 void setPaused(bool paused) {
     std::lock_guard<std::mutex> lk(g_pauseMutex);
     const uint64_t at = g_pausedAt.load();
@@ -1220,8 +1225,7 @@ static void registerCoreHle() {
         ret(c, t);
     });
     HLE(sceKernelLibcGettimeofday) {
-        auto now = std::chrono::system_clock::now().time_since_epoch();
-        uint64_t us = (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(now).count();
+        const uint64_t us = wallClockUs();
         if (A(c, 0)) { write32(A(c, 0), (uint32_t)(us / 1000000)); write32(A(c, 0) + 4, (uint32_t)(us % 1000000)); }
         ret(c, 0);
     });
