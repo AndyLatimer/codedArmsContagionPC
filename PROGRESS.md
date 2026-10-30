@@ -68,10 +68,15 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
   ~77 µs (medido bajo Wine). Antes: bloqueo en el logo (esperas cortas imprecisas) y un hilo que
   giraba sin dormir; ambos corregidos con informes del usuario.
 
+- [x] [NUEVO] **Consola Lua de desarrollo** en el estado Lua del juego (§11) y **modo dev**: F5/F6
+  ponen cada una de las 12 armas en la 4.ª ranura con munición infinita, con la carga del juego.
+- [x] [NUEVO] **ADS para todas las armas** (13), verificado con capturas una a una; ajustes por
+  arma en `weapons.ini` (Mode Sight/Zoom/Scope, Pitch/Yaw/Roll, SightOffset); francotirador con la
+  mira del juego (probado en el front end: clic der. → x2, soltar → sin mira); Vulcan solo zoom.
+- [x] Teclas 1–5: arma de la ranura (verificado en ca_psprun: pistola, rifle, escopeta).
+- [x] Correspondencia g01…g19 ↔ armas verificada (§10).
+
 ## No funciona todavía
-- [ ] Teclas 1–5 para elegir arma directamente: el cambio de arma no pasa por la entrada del control
-  del jugador (§10); hay que llegar con varias armas (galería de tiro del tutorial) para localizarlo.
-- [ ] Correspondencia g02…g13 ↔ armas sin verificar (solo hay pistola al empezar el tutorial).
 - [ ] "E interactuar": el juego no tiene botón de interactuar en el esquema A; sin asignar.
 - [x] Compilación de Windows con todo lo anterior; probada bajo Wine en Xvfb: menús, perfil,
   tutorial, ratón directo, ADS con clic derecho y disparo con clic izquierdo.
@@ -87,16 +92,16 @@ ctest --test-dir build/linux
 ./build/linux/cpu_diff
 cd build/run && ../linux/ca_psprun --iso ../../game/Coded.Arms.Contagion.iso --seconds 40
 ```
-Órdenes del FIFO de `ca_psprun --control`: press/hold/release/stick/shot/memdump/aim/ads/fov/fps/matdump.
+Órdenes del FIFO de `ca_psprun --control`: press/hold/release/stick/shot/memdump/aim/ads/fov/fps/matdump,
+`lua FICHERO`, `dev 0|1`, `devcycle ±1`, `slot 1-5`, `adsw MODO PITCH YAW ROLL CLOSER SX SY` (ajuste del ADS).
 Variables útiles del runtime: `CA_HOOK_TRACE` (gancho de giro y posición), `CA_ADS_DEBUG`,
 `CA_WATCH_ADDR` + `CA_WATCH_STACK` (build de vigilancia), `CA_HLE_STATS=1` (llamadas más frecuentes), `CA_THREAD_DUMP=s` (hilos y
 event flags), `--trace` (llamadas al sistema con su resultado), `CA_GPU_DEBUG`, `CA_GPU_XFER`,
 `CA_DUMP_UPLOAD=dir`, `CA_ATRAC_VERBOSE`. Control interactivo: `--control FIFO` (press/hold/stick/shot).
 
 ## Siguiente paso concreto
-1. Ranuras de arma (teclas 1–5): el inventario es un objeto aparte (vtable 08c1da3c, punteros a
-   las armas en +0x50) sin ruta estable desde el personaje todavía; hace falta una segunda arma
-   (avanzar el tutorial) para localizar el cambio de arma y verificar g02….
+1. Probar el ADS ajustado en niveles con otras luces y animaciones (correr, recargar) y recoger
+   los comentarios del usuario por arma.
 
 ## Registro de decisiones
 - 2026-10-28: Recompilación estática reutilizando el motor de CodedArmsPC (sin modificar ese repositorio).
@@ -106,3 +111,5 @@ event flags), `--trace` (llamadas al sistema con su resultado), `CA_GPU_DEBUG`, 
 - 2026-10-28: Ratón inyectado en el delta de giro del juego (no en la matriz): mismo camino que el mando.
 - 2026-10-28: ADS en el renderizador (la lógica del juego no cambia; los disparos van al centro).
 - 2026-10-28: Sin parche de frame rate: el juego ya va a 60 y su lógica depende del tiempo.
+- 2026-10-30: Armas (dev, teclas 1–5) por el Lua del propio juego: mismo camino que sus scripts.
+- 2026-10-30: ADS por arma con valores fijos medidos en capturas; el francotirador usa la mira del juego.

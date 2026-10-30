@@ -253,15 +253,24 @@ void controlThread(std::string path) {
             } else if (c == "poke8") { // poke8 ADDR VALUE (hex address)
                 unsigned a = 0, v = 0;
                 if (std::sscanf(l.c_str(), "%*s %x %u", &a, &v) == 2) psp::write8(a, (uint8_t)v);
-            } else if (c == "dev") { // dev 0|1 [w0 w1 w2 w3 w4]: dev mode loadout
-                int v[6] = {0, 0, 4, 6, 19, 23};
-                int n2 = std::sscanf(l.c_str(), "%*s %d %d %d %d %d %d", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]);
-                psp::host::g_dev.enabled = v[0] != 0;
-                if (n2 == 6) for (int i = 0; i < 5; ++i) psp::host::g_dev.loadout[i] = v[i + 1];
+            } else if (c == "dev") { // dev 0|1: dev mode
+                psp::host::g_dev.enabled = std::atoi(arg) != 0;
             } else if (c == "pause") { // pause 0|1: the front end menus' pause
                 psp::kernel::setPaused(std::atoi(arg) != 0);
-            } else if (c == "devcycle") { // devcycle 1|-1: next / previous weapon in place of the current one
+            } else if (c == "devcycle") { // devcycle 1|-1: dev mode, the next / previous gun in the fourth slot
                 psp::host::g_dev.cycle = std::atoi(arg);
+            } else if (c == "slot") { // slot 1-5: switch to that weapon slot (the number keys)
+                psp::host::g_selectSlot = std::atoi(arg);
+            } else if (c == "lua") { // lua FILE: run the Lua chunk in the game (result in the log as [LUA])
+                if (FILE* lf = std::fopen(arg, "rb")) {
+                    std::string code;
+                    char b[4096];
+                    size_t n;
+                    while ((n = std::fread(b, 1, sizeof b, lf)) > 0) code.append(b, n);
+                    std::fclose(lf);
+                    std::lock_guard<std::mutex> lk(psp::host::g_luaConsole.m);
+                    psp::host::g_luaConsole.pending.push_back(code);
+                }
             } else if (c == "ads") { // ads 0|1: aim down sights
                 psp::host::g_ads = std::atoi(arg) != 0;
             } else if (c == "fov") { // fov NORMAL ADS: fields of view (degrees)
@@ -269,6 +278,18 @@ void controlThread(std::string path) {
                 std::sscanf(l.c_str(), "%*s %f %f", &a, &b);
                 psp::host::g_adsSettings.normalFov = a;
                 psp::host::g_adsSettings.adsFov = b;
+            } else if (c == "adsw") { // adsw MODE PITCH YAW ROLL CLOSER SX SY: the weapon's ADS values ("-": measured)
+                char v[7][32] = {"0", "-", "-", "-", "0.2", "0", "0"};
+                std::sscanf(l.c_str(), "%*s %31s %31s %31s %31s %31s %31s %31s", v[0], v[1], v[2], v[3], v[4], v[5], v[6]);
+                auto num = [](const char* s) { return s[0] == '-' && !s[1] ? NAN : (float)std::atof(s); };
+                auto& a = psp::host::g_adsSettings;
+                a.mode = std::atoi(v[0]);
+                a.pitchDeg = num(v[1]);
+                a.yawDeg = num(v[2]);
+                a.rollDeg = num(v[3]);
+                a.weaponCloser = num(v[4]);
+                a.sightX = num(v[5]);
+                a.sightY = num(v[6]);
             } else if (c == "mapshot") { // mapshot FILE: the minimap (256 px, 150 units)
                 std::vector<uint32_t> px;
                 if (psp::gpu::minimap::render(px, 256, 150.0f)) stbi_write_png(arg, 256, 256, 4, px.data(), 256 * 4);

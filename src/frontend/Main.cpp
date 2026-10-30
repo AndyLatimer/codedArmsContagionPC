@@ -85,8 +85,7 @@ struct FrontSettings {
     float minimapRange = 160;  // world units from the centre to the edge
     int minimapCorner = 0;     // 0 bottom left (above the health bar), 1 top right (below the game's radar)
     int frameRate = 60;     // cap: 60 (the game's maximum) or 30
-    bool dev = false;       // dev mode (testing): every weapon, endless ammo, F5/F6 change the weapon
-    std::string devLoadout = "0, 4, 6, 19, 23"; // the five weapons levels start with (ids, see LEEME)
+    bool dev = false;       // dev mode (testing): F5/F6 put each of the game's guns in the 4th slot, endless ammo
     float volume = 1.0f;
     float deadzone = 0.2f;
     float moveSpeed = 1.0f;  // stick push of the movement keys (1 = run, the game's top speed)
@@ -106,8 +105,10 @@ struct FrontSettings {
     // weapons.ini: [Weapon.NAME] (the game's internal name, e.g. g01) overrides of the above.
     struct WeaponAds {
         int enabled = -1;                    // -1: as [ADS]
+        int mode = 0;                        // 0 Sight (to the eye), 1 Zoom (only), 2 Scope (the game's own)
         float adsFov = 0, sens = 0;          // 0: as [ADS]
         float sightX = 0, sightY = 0, closer = 0.2f;
+        float pitch = NAN, yaw = NAN, roll = NAN; // degrees, NaN: measured
     };
     std::map<std::string, WeaponAds> weaponAds; // lowercase name
     int mouseLookMode = 1;   // 0 off, 1 direct aim, 2 look buttons
@@ -172,7 +173,6 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& dir) {
     s.minimapRange = std::clamp(getF(ini, "video", "minimap_range", 160.0f), 40.0f, 1000.0f);
     s.minimapCorner = (int)getF(ini, "video", "minimap_corner", 0) == 1 ? 1 : 0;
     s.dev = getF(ini, "dev", "enabled", 0) != 0;
-    s.devLoadout = ini.get("dev", "loadout", s.devLoadout);
     s.volume = getF(ini, "audio", "volume", 1.0f);
     s.deadzone = getF(ini, "input", "deadzone", 0.2f);
     s.moveSpeed = std::clamp(getF(ini, "input", "move_speed", 1.0f), 0.35f, 1.0f);
@@ -202,11 +202,36 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& dir) {
     s.adsSens = std::clamp(getF(ini, "ADS", "ADSMouseSensitivityMultiplier", 0.65f), 0.05f, 2.0f);
     s.adsHideCrosshair = getB(ini, "ADS", "HideCrosshairWhileADS", true);
     s.adsAllowFire = getB(ini, "ADS", "AllowFiringWhileADS", true);
-    if (!ini.has("Weapon.g01", "Name")) { // first run: the one weapon identified so far
-        ini.set("Weapon.g01", "Name", "Pistol");
-        ini.set("Weapon.g01", "SightOffsetX", "0");
-        ini.set("Weapon.g01", "SightOffsetY", "0");
-        ini.set("Weapon.g01", "WeaponCloser", "0.2");
+    // The game's guns by internal name, with the settings found for each (dev mode, F5/F6).
+    // Added when missing, so later versions add new weapons without touching the player's.
+    struct WeaponDefault { const char* id; const char* name; const char* mode; const char* extra; };
+    static const WeaponDefault kWeaponDefaults[] = {
+        {"g01", "Pistol", "Sight", ""},
+        {"g02", "SMG", "Sight", ""},
+        {"g03", "Assault rifle", "Sight", "Pitch=2;Roll=0"},
+        {"g04", "Shotgun", "Sight", "Pitch=6;Roll=0;SightOffsetY=-0.015"},
+        {"g05", "Vulcan", "Zoom", ""},
+        {"g06", "Sniper rifle", "Scope", ""},
+        {"g07", "Gauss rifle", "Sight", "Roll=0;SightOffsetY=0.025"},
+        {"g08", "Pulse rifle", "Sight", "Roll=0;SightOffsetY=0.03"},
+        {"g09", "Lightning gun", "Sight", ""},
+        {"g10", "Nova generator", "Sight", ""},
+        {"g11", "Data leech", "Sight", ""},
+        {"g13", "Grenade launcher", "Sight", "Pitch=0;Roll=0;SightOffsetY=-0.015"},
+        {"g19", "RPG", "Sight", "Roll=0"},
+    };
+    for (const WeaponDefault& d : kWeaponDefaults) {
+        const std::string sec = std::string("Weapon.") + d.id;
+        if (ini.has(sec, "Name")) continue;
+        ini.set(sec, "Name", d.name);
+        ini.set(sec, "Mode", d.mode);
+        for (const char* p = d.extra; *p;) { // "Key=value;Key=value"
+            const char* e = std::strchr(p, ';');
+            const std::string kv(p, e ? e : p + std::strlen(p));
+            const size_t eq = kv.find('=');
+            if (eq != std::string::npos) ini.set(sec, kv.substr(0, eq), kv.substr(eq + 1));
+            p = e ? e + 1 : p + std::strlen(p);
+        }
     }
     for (const auto& [sec, kv] : ini.sections()) {
         if (sec.rfind("weapon.", 0) != 0 || sec.size() <= 7) continue;
@@ -218,6 +243,13 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& dir) {
         w.sightX = std::clamp(getF(ini, sc, "SightOffsetX", 0), -0.5f, 0.5f);
         w.sightY = std::clamp(getF(ini, sc, "SightOffsetY", 0), -0.5f, 0.5f);
         w.closer = std::clamp(getF(ini, sc, "WeaponCloser", 0.2f), 0.0f, 0.6f);
+        std::string mode = ini.get(sc, "Mode", "Sight");
+        for (char& ch : mode) ch = (char)std::tolower((unsigned char)ch);
+        w.mode = mode == "zoom" ? 1 : mode == "scope" ? 2 : 0;
+        auto angle = [&](const char* k) { return ini.has(sec, k) ? std::clamp(getF(ini, sc, k, 0), -45.0f, 45.0f) : NAN; };
+        w.pitch = angle("Pitch");
+        w.yaw = angle("Yaw");
+        w.roll = angle("Roll");
         s.weaponAds[sec.substr(7)] = w;
     }
     s.invertY = getF(ini, "input", "invert_y", 0) != 0;
@@ -245,7 +277,6 @@ void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& dir) 
     ini.set("video", "minimap_range", std::to_string(s.minimapRange));
     ini.set("video", "minimap_corner", std::to_string(s.minimapCorner));
     ini.set("dev", "enabled", s.dev ? "1" : "0");
-    ini.set("dev", "loadout", s.devLoadout);
     ini.set("audio", "volume", std::to_string(s.volume));
     ini.set("input", "deadzone", std::to_string(s.deadzone));
     ini.set("input", "move_speed", std::to_string(s.moveSpeed));
@@ -280,8 +311,11 @@ void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& dir) 
         "# Coded Arms: Contagion PC - video. Edit freely; invalid values are clamped.\n",
         "# Coded Arms: Contagion PC - controls and aim down sights. Bindings: key:NAME, mouse:left|right|middle|x1|x2|\n"
         "# wheelup|wheeldown, pad:BUTTON, comma separated. Fields of view: horizontal degrees (the game's own is 80).\n",
-        "# Coded Arms: Contagion PC - aim down sights per weapon: a [Weapon.NAME] section overrides [ADS] keys\n"
-        "# (ADSFOV, ADSMouseSensitivityMultiplier, Enabled) and tunes the sights (SightOffsetX/Y, WeaponCloser).\n"};
+        "# Coded Arms: Contagion PC - aim down sights per weapon (NAME: the game's internal name, in the log as\n"
+        "# [GAME] weapon NAME). A [Weapon.NAME] section overrides [ADS] keys (ADSFOV, ADSMouseSensitivityMultiplier,\n"
+        "# Enabled) and sets how the weapon aims: Mode = Sight (up to the eye), Zoom (stays at the hip, zoom only) or\n"
+        "# Scope (the game's own scope); for Sight, SightOffsetX/Y and WeaponCloser move the sight picture and\n"
+        "# Pitch, Yaw, Roll (degrees) replace the measured angles of the weapon (remove them to measure).\n"};
     for (int k = 0; k < 4; ++k) {
         if (FILE* f = std::fopen((dir + files[k].first).c_str(), "wb")) {
             const std::string text = ini.serialize(kHeaders[k], files[k].second);
@@ -320,6 +354,10 @@ void applyAdsSettings(const FrontSettings& s) {
     a.sightX = w ? w->sightX : 0.0f;
     a.sightY = w ? w->sightY : 0.0f;
     a.weaponCloser = w ? w->closer : 0.2f;
+    a.mode = w && w->mode == 1 ? 1 : 0;
+    a.pitchDeg = w ? w->pitch : NAN;
+    a.yawDeg = w ? w->yaw : NAN;
+    a.rollDeg = w ? w->roll : NAN;
 }
 
 // ---- input --------------------------------------------------------------------------------
@@ -328,6 +366,11 @@ struct InputState {
     SDL_GameController* pad = nullptr;
     float lookAccumX = 0, lookAccumY = 0;
     bool adsOn = false, adsWasHeld = false;
+    // Scope weapons: the zoom wanted from the game's scope (-1: none pending), taps of its
+    // button left, the end of the current tap and the earliest next one (SDL ticks).
+    int scopeWant = -1, scopeTaps = 0;
+    Uint32 scopeTapUntil = 0, scopeNextTap = 0;
+    bool scopeAdsWas = false;
     // Mouse buttons from SDL events (more reliable than polling in relative mode); `mouseClicked`
     // keeps presses released before the next frame so short clicks are not lost.
     Uint32 mouseHeld = 0, mouseClicked = 0;
@@ -411,7 +454,41 @@ void updateController(const FrontSettings& s, InputState& in, bool focused, floa
     if (!focused || !weaponAdsEnabled(s)) in.adsOn = false;
     psp::host::g_ads = in.adsOn;
     if (in.adsOn && !s.adsAllowFire) buttons &= ~psp::host::BTN_RTRIGGER;
-    const float lookScale = in.adsOn ? weaponAdsSens(s) : 1.0f;
+    float lookScale = in.adsOn ? weaponAdsSens(s) : 1.0f;
+
+    // Scope weapons (the sniper rifle): aiming is the game's own scope, which its scope button
+    // steps through (off, x2, x4). When the aim button goes down or up, that button is tapped
+    // until the view's zoom (the level's projection, measured by the renderer) agrees; the
+    // scope button itself still works as in the game. Only while the game updates the player
+    // (not paused or in a menu, where the button would move through the menu).
+    if (const auto* wa = currentWeaponAds(s); wa && wa->mode == 2) {
+        psp::host::g_ads = false;
+        const Uint32 now = SDL_GetTicks();
+        static uint32_t lastUpdates = 0;
+        static Uint32 playingAt = 0;
+        if (const uint32_t u = psp::host::g_playerUpdates.load(); u != lastUpdates) { lastUpdates = u; playingAt = now; }
+        const bool playing = now - playingAt < 200;
+        static float baseProj = 0; // the game's own field of view: the smallest scale seen
+        const float proj = psp::host::g_levelProjY.load();
+        if (playing && proj > 0 && (baseProj == 0 || proj < baseProj)) baseProj = proj;
+        const bool zoomed = baseProj > 0 && proj > baseProj * 1.3f;
+        if (in.adsOn != in.scopeAdsWas) { in.scopeWant = in.adsOn ? 1 : 0; in.scopeTaps = 4; }
+        in.scopeAdsWas = in.adsOn;
+        if (in.scopeTapUntil) {
+            if (now < in.scopeTapUntil) buttons |= psp::host::BTN_UP;
+            else { in.scopeTapUntil = 0; in.scopeNextTap = now + 250; }
+        } else if (in.scopeWant >= 0 && (in.scopeWant == 1) == zoomed) {
+            in.scopeWant = -1;
+        } else if (in.scopeWant >= 0 && playing && in.scopeTaps > 0 && now >= in.scopeNextTap) {
+            in.scopeTapUntil = now + 80;
+            --in.scopeTaps;
+            buttons |= psp::host::BTN_UP;
+        }
+        lookScale = zoomed ? weaponAdsSens(s) * baseProj / proj : 1.0f;
+    } else {
+        in.scopeWant = -1;
+        in.scopeAdsWas = in.adsOn;
+    }
 
     // Analog stick: gamepad left stick, or the digital stick bindings.
     float ax = 0, ay = 0;
@@ -798,7 +875,7 @@ std::vector<ca::MenuItem> buildMenu(FrontSettings& s, SDL_Window* win, MenuState
 
     m.push_back(header("Otros"));
     m.push_back(toggle("Modo dev (todas las armas, F5/F6)", s.dev, [&s] { psp::host::g_dev.enabled = s.dev; },
-                       "desde el siguiente nivel"));
+                       "F5/F6: arma anterior / siguiente"));
     {
         ca::MenuItem it;
         it.label = "Volver";
@@ -832,7 +909,7 @@ std::vector<ca::MenuItem> buildMenu(FrontSettings& s, SDL_Window* win, MenuState
         {"Zona muerta del stick izquierdo", "Movimiento del stick que se ignora (desgaste del mando)."},
         {"Zona muerta del stick derecho", "Movimiento del stick que se ignora (desgaste del mando)."},
         {"Restaurar los controles por defecto", "Vuelve a la configuración de teclas inicial."},
-        {"Modo dev (todas las armas, F5/F6)", "Pruebas: todas las armas y munición infinita; F5/F6 cambian el arma."},
+        {"Modo dev (todas las armas, F5/F6)", "Pruebas: F5/F6 ponen en la cuarta ranura cada arma del juego (la anterior / siguiente), con munición infinita."},
     };
     for (ca::MenuItem& it : m) {
         if (it.header || !it.help.empty()) continue;
@@ -932,12 +1009,7 @@ int main(int argc, char** argv) {
     if (s.pcButtonHints) installButtonLabels(s);
     psp::host::g_targetFps = s.frameRate == 30 ? 30 : 60;
     psp::host::g_dev.enabled = s.dev;
-    {
-        int ids[5] = {-1, -1, -1, -1, -1};
-        std::sscanf(s.devLoadout.c_str(), "%d , %d , %d , %d , %d", &ids[0], &ids[1], &ids[2], &ids[3], &ids[4]);
-        for (int i = 0; i < 5; ++i) psp::host::g_dev.loadout[i] = ids[i] >= 0 && ids[i] < 33 ? ids[i] : -1;
-        if (s.dev) std::fprintf(stderr, "[DEV] dev mode: weapons %d %d %d %d %d, F5/F6 change the weapon\n", ids[0], ids[1], ids[2], ids[3], ids[4]);
-    }
+    if (s.dev) std::fprintf(stderr, "[DEV] dev mode: F5/F6 put the previous / next gun in the fourth slot\n");
     if (!psp::gpu::renderInit()) return 1;
     GLuint blit = makeProgram(kBlitVs, kBlitFs);
     GLuint overlayProg = makeProgram(kBlitVs, kOverlayFs);
@@ -1146,8 +1218,31 @@ int main(int argc, char** argv) {
                 } else if (e.key.keysym.scancode == SDL_SCANCODE_N && !e.key.repeat) {
                     s.minimap = !s.minimap;
                     psp::gpu::minimap::setEnabled(s.minimap);
-                } else if (s.dev && (e.key.keysym.scancode == SDL_SCANCODE_F5 || e.key.keysym.scancode == SDL_SCANCODE_F6)) {
-                    psp::host::g_dev.cycle = e.key.keysym.scancode == SDL_SCANCODE_F6 ? 1 : -1;
+                } else if (!e.key.repeat && e.key.keysym.scancode >= SDL_SCANCODE_1 && e.key.keysym.scancode <= SDL_SCANCODE_5) {
+                    psp::host::g_selectSlot = e.key.keysym.scancode - SDL_SCANCODE_1 + 1; // weapon slot 1-5
+                } else if (s.dev && !e.key.repeat &&
+                           (e.key.keysym.scancode == SDL_SCANCODE_F5 || e.key.keysym.scancode == SDL_SCANCODE_F6)) {
+                    // The game loads one weapon at a time: a new one only after the last loaded.
+                    static Uint32 lastCycle = 0;
+                    if (SDL_GetTicks() - lastCycle > 1500 || !lastCycle) {
+                        lastCycle = SDL_GetTicks();
+                        psp::host::g_dev.cycle = e.key.keysym.scancode == SDL_SCANCODE_F6 ? 1 : -1;
+                    }
+                } else if (e.key.keysym.scancode == SDL_SCANCODE_F9 && !e.key.repeat) {
+                    // Developer Lua console: dev.lua (next to the .ini files) runs in the game; the
+                    // result goes to the log as [LUA].
+                    if (FILE* lf = std::fopen((cfgDir + "dev.lua").c_str(), "rb")) {
+                        std::string code;
+                        char b[4096];
+                        size_t n;
+                        while ((n = std::fread(b, 1, sizeof b, lf)) > 0) code.append(b, n);
+                        std::fclose(lf);
+                        std::lock_guard<std::mutex> lk(psp::host::g_luaConsole.m);
+                        psp::host::g_luaConsole.pending.push_back(code);
+                        std::fprintf(stderr, "[LUA] dev.lua queued (%zu bytes)\n", code.size());
+                    } else {
+                        std::fprintf(stderr, "[LUA] no dev.lua in %s\n", cfgDir.c_str());
+                    }
                 } else if (e.key.keysym.scancode == SDL_SCANCODE_F12 && !e.key.repeat) {
                     s_dumpThreads = true; // the guest threads' states to the log
                 } else if (e.key.keysym.scancode == SDL_SCANCODE_F1 && !e.key.repeat) {

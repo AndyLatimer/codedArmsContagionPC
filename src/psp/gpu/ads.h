@@ -12,7 +12,8 @@
 // its top edge, and the barrel direction is fitted through that edge. The alignment is
 // measured when aiming starts and then kept, so the weapon's own animations (recoil) still
 // show. The field of view is scaled relative to the game's (its sniper scope zooms on top).
-// Settings: host::g_adsSettings.
+// Settings: host::g_adsSettings, per weapon: the measured angles can be replaced, and weapons
+// held low (the Vulcan) only zoom.
 #include <cstdint>
 #include <vector>
 

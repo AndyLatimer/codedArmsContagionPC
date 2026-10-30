@@ -68,6 +68,7 @@ extern uint32_t g_prof_counts[];
 #define RT_PROF(a) (++g_prof_counts[((a) - 0x08804000u) >> 2])
 // Port hooks of the game (tools/recomp/games/<disc id>/hooks.tsv, src/games/<disc id>/).
 void ca_hook_player_turn(Ctx* c);
+void ca_hook_lua_pcall(Ctx* c);
 
 #define R(n) (c->r[n])
 #define F(n) (c->f[n])

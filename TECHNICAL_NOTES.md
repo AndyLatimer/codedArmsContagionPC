@@ -124,8 +124,10 @@ retrato. Los toques cortos (<0,15 s) se pierden: el juego sondea el mando a su r
 - **Arma actual**: `*(*(jugador+0x29C)+0x20)` = personaje (vtable 08c20fec), `+0x54` = objeto
   del arma, cuya primera palabra apunta a su nombre interno ("g01" = pistola, verificado). La
   tabla de textos lista Pistol, Rifle, Shotgun, Sniper Rifle, RPG, Submachine Gun, Pulse Rifle,
-  Grenade Launcher, Lightning Gun, Gauss Rifle, Data Leech, Nova Generator, Vulcan Cannon (la
-  correspondencia con g02… no está verificada). Munición del cargador en arma+0x1C.
+  Grenade Launcher, Lightning Gun, Gauss Rifle, Data Leech, Nova Generator, Vulcan Cannon.
+  Verificado (modo dev): g01 pistola, g02 subfusil, g03 rifle, g04 escopeta, g05 Vulcan,
+  g06 francotirador, g07 Gauss, g08 pulsos, g09 rayos, g10 Nova, g11 Data Leech,
+  g13 lanzagranadas, g19 RPG. Munición del cargador en arma+0x1C.
 - **Render del arma**: vista identidad y la misma proyección que el nivel (`proj[0]` = 1,192,
   FOV horizontal 80° a 480×272) con plano cercano más próximo; brazos = draws con pesos de
   skinning; arma = el resto. Radar: viewport 56×25. Ver `src/psp/gpu/ads.cpp`.
@@ -133,6 +135,30 @@ retrato. Los toques cortos (<0,15 s) se pierden: el juego sondea el mando a su r
   (0x40 disparo, 0x20 fijar blanco), +0x30 impulso de salto, +0x14/+0x2c mirada con botones. Cambiar
   de arma, recargar y la mira telescópica no pasan por ahí: los trata otro sistema.
 - El objeto de `personaje+0x54` recibe el arma en su constructor (`f_08949624`), así que
-  probablemente es el "arma en mano" y se recrea al cambiar de arma. Sin verificar: el tutorial
-  y la misión 1 empiezan solo con la pistola; la escopeta, la granada y el francotirador se
-  entregan en la galería de tiro del tutorial, tras la puerta con pirateo.
+  probablemente es el "arma en mano" y se recrea al cambiar de arma.
+
+## 11. Lua del juego, consola de desarrollo y armas  ✅
+- **Lua**: variante 5.1-work (bytecode: versión 0x51, números `float`; tras EQ/LT/LE/TEST va
+  CALL, sin TESTSET). Biblioteca base en 0x08a2d4d8 (loadstring), `print` vacío. Funciones C:
+  luaL_loadbuffer 0x08a2a66c, lua_pcall 0x08a0a7a4, lua_gettop 0x08a0e488, lua_settop 0x08a0e418.
+  Pila: TObject de 8 bytes (valor +0, tipo +4: 0 nil, 1 bool, 3 número, 4 cadena).
+- **Consola** (`ca_hook_lua_pcall`, tras la primera instrucción de lua_pcall): ejecuta los trozos
+  pendientes en el estado Lua del juego y escribe el resultado como `[LUA]`. `string.dump` +
+  un desensamblador propio permitieron leer las funciones del juego (sin nombres de locales).
+- **Armas**: la tabla global `wpn` (metatabla `__index` 0x08a93ab0 → 0x08a712d8) da el cargador
+  C++: `loadWeapon(sbf, ranura0, tipo)`, `setWeapon(ranura0)`, `unloadWeapon`… y los tipos
+  PISTOL=1 … VIRAL_GRENADE=18. Recursos `weaponN.sbf` (N = tipo); solo hay 3 búferes de
+  0x23200 bytes además de la pistola: **caben 3 armas cargadas a la vez**.
+- El HUD de armas (`_import_cached_cache.loader.cfg.objects.powerups.GetHandler().ammo`,
+  hud.lua) lleva las ranuras (`slots[1..5]`, nombres "pistol", "rifle"…): `UnlockWeapon(nombre)`
+  (lo que hace recoger un arma: busca ranura, caja "loading plugin"), `LoadWpn(ranura, nombre)`
+  (descarga la del hueco, carga y cambia, sin caja), `SetWeapon(nombre)` (cambiar). Una ranura
+  admite un arma si su `wpn_type` ≤ índice (0-3); la 5.ª es de granadas (`CheckWeaponAvailability`).
+- **Modo dev** (F5/F6): `LoadWpn(4, siguiente)` con munición infinita; al terminar de descargar
+  el juego llama a `LoadWeapon` (con caja), que se desvía una vez a `LoadWpn`.
+  **Teclas 1–5**: `SetWeapon(slots[k])`.
+- **ADS por arma** (ajustado con `adsw` en `ca_psprun`): la medida automática (borde superior)
+  falla con miras altas o laterales; `weapons.ini` trae Pitch/Roll/SightOffsetY para el rifle,
+  la escopeta, Gauss, pulsos, lanzagranadas y RPG; la Vulcan solo hace zoom y el francotirador
+  usa la mira del juego (▲: apagada → x2 → x4 → apagada; el front end pulsa ▲ hasta que la
+  escala de proyección del nivel, `g_levelProjY`, coincide con el clic derecho).

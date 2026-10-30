@@ -111,6 +111,7 @@ void AimDownSights::endFrame() {
     const float dt = lastUs_ ? (float)std::min(0.1, (now - lastUs_) / 1e6) : 0.0f;
     lastUs_ = now;
     const bool want = host::g_ads.load() && cfg.enabled.load();
+    const bool zoomOnly = cfg.mode.load() == 1; // the weapon stays where the game holds it
 
     // Measure the weapon when aiming starts (from hip), then keep that alignment; measure again
     // when a different weapon appears (its vertex count changes for a few frames).
@@ -121,7 +122,7 @@ void AimDownSights::endFrame() {
         changed_ = other ? changed_ + 1 : 0;
         if (changed_ >= 5) { aligned_ = false; changed_ = 0; }
     }
-    if (want && !aligned_ && gunVerts >= 12) {
+    if (want && !aligned_ && !zoomOnly && gunVerts >= 12) {
         float maxY = -1e9f, minY = 1e9f;
         for (size_t i = 0; i < gun_.size(); i += 3) { maxY = std::max(maxY, gun_[i + 1]); minY = std::min(minY, gun_[i + 1]); }
         const float edge = maxY - 0.12f * (maxY - minY);
@@ -227,26 +228,31 @@ void AimDownSights::endFrame() {
 
     // Towards the target at a constant rate (independent of the frame rate), without
     // overshooting (stepping away from it and back made the weapon and the view shake).
-    const float target = (want && aligned_) ? 1.0f : 0.0f;
+    const float target = (want && (aligned_ || zoomOnly)) ? 1.0f : 0.0f;
     const float step = dt / std::max(0.01f, cfg.transitionS.load());
     t_ = target > t_ ? std::min(target, t_ + step) : std::max(target, t_ - step);
     if (target == 0 && t_ == 0) aligned_ = false;
     const float s = smoothstep(t_);
+    const float sw = zoomOnly ? 0.0f : s; // how far the weapon has come up
 
     // The level's field of view: the normal one, narrowing to the aiming one.
     const float hip = fovScale(cfg.normalFov.load()), aim = fovScale(cfg.adsFov.load());
     fovScale_ = hip + (aim - hip) * s;
 
     // M(t) = T(S + (S' - S) t) * Rz(roll t) * Rx(pitch t) * Ry(yaw t) * T(-S), S' = the sight
-    // on the axis, brought `weaponCloser` of its distance towards the eye.
+    // on the axis, brought `weaponCloser` of its distance towards the eye. The weapon's
+    // settings may replace the measured angles (weapons whose shape misleads the fit).
     const float sx = sight_[0] + cfg.sightX.load(), sy = sight_[1] + cfg.sightY.load();
     const float closer = std::clamp(cfg.weaponCloser.load(), 0.0f, 0.6f);
+    auto angle = [](float deg, float measured) { return std::isnan(deg) ? measured : deg * kDegToRad; };
+    const float roll = angle(cfg.rollDeg.load(), roll_), pitch = angle(cfg.pitchDeg.load(), pitch_);
+    const float yaw = angle(cfg.yawDeg.load(), yaw_);
     float a[16], r[16], b[16], c[16], d[16];
-    translate(a, sx * (1 - s), sy * (1 - s), sight_[2] * (1 - closer * s));
-    rotZ(r, roll_ * s);
-    rotX(b, pitch_ * s);
-    rotY(c, yaw_ * s);
-    translate(d, -sx - sway_[0] * kSteady * s, -sy - sway_[1] * kSteady * s, -sight_[2]);
+    translate(a, sx * (1 - sw), sy * (1 - sw), sight_[2] * (1 - closer * sw));
+    rotZ(r, roll * sw);
+    rotX(b, pitch * sw);
+    rotY(c, yaw * sw);
+    translate(d, -sx - sway_[0] * kSteady * sw, -sy - sway_[1] * kSteady * sw, -sight_[2]);
     mul(a, r, adsMat_);
     mul(adsMat_, b, adsMat_);
     mul(adsMat_, c, adsMat_);
@@ -256,14 +262,17 @@ void AimDownSights::endFrame() {
 void AimDownSights::adjust(const float view[12], float viewportScaleX, float view44[16], float proj44[16]) const {
     if (isWeaponCamera(view) || muzzleEffect_) {
         if (t_ > 0) mul(adsMat_, view44, view44);
-    } else if (std::fabs(viewportScaleX) > 200 && fovScale_ != 1) { // the level (full screen; the radar is small)
-        proj44[0] *= fovScale_;
-        proj44[5] *= fovScale_;
+    } else if (std::fabs(viewportScaleX) > 200) { // the level (full screen; the radar is small)
+        host::g_levelProjY.store(proj44[5], std::memory_order_relaxed);
+        if (fovScale_ != 1) {
+            proj44[0] *= fovScale_;
+            proj44[5] *= fovScale_;
+        }
     }
 }
 
 bool AimDownSights::hide2D(const std::vector<Vertex>& verts) const {
-    if (t_ < 0.25f || verts.empty() || !host::g_adsSettings.hideCrosshair.load()) return false;
+    if (t_ < 0.25f || verts.empty() || !host::g_adsSettings.hideCrosshair.load() || host::g_adsSettings.mode.load() == 1) return false;
     float lo[2] = {1e9f, 1e9f}, hi[2] = {-1e9f, -1e9f};
     for (const Vertex& v : verts)
         for (int k = 0; k < 2; ++k) { lo[k] = std::min(lo[k], v.pos[k]); hi[k] = std::max(hi[k], v.pos[k]); }

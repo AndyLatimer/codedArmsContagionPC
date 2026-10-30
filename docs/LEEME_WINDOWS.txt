@@ -17,12 +17,13 @@ Estado
   de los FPS.
 - Apuntar con la mira (ADS, clic derecho): el arma sube a los ojos con el punto de mira en
   el centro, se cierra el campo de vision y baja la sensibilidad. Se puede disparar.
+  Ajustado arma por arma (las 13 del juego, ver weapons.ini): el rifle de francotirador usa
+  la mira telescopica del propio juego y la Vulcan solo acerca la vista (se lleva a la cadera).
 - 60 FPS (el maximo del juego; su logica va por tiempo real, la velocidad no cambia) o 30.
 - Los menus muestran las teclas del PC (Intro, Retroceso) en lugar de los botones de la PSP.
 - Consejo: en el tutorial, las puertas se abren cuando termina la conversacion por radio
   (avanzala con Intro).
-- En desarrollo: teclas 1-5 para elegir arma directamente, ajustes por arma verificados
-  solo para la pistola (g01).
+- Teclas 1-5: el arma de esa ranura del HUD.
 
 Controles por defecto (controls.ini, seccion [bindings]; tambien en el menu F1)
 -------------------------------------------------------------------------------
@@ -35,7 +36,8 @@ Siguen el esquema A del juego (Settings > Controls).
   Clic derecho        apuntar con la mira (ADS)
   Espacio             saltar (L)
   R / Flecha der.     recargar
-  Rueda / C           cambiar de arma (el juego solo tiene "siguiente arma")
+  Rueda / C           siguiente arma
+  1 - 5               arma de la ranura 1-5
   Boton central / Z   mira telescopica del juego (francotirador)
   Q                   fijar blanco (lock-on)
   Tab / V             visor (SELECT)
@@ -65,11 +67,23 @@ Configuracion (junto al ejecutable, o en la carpeta de preferencias del usuario)
                   ADSMouseSensitivityMultiplier = 0.65
                   HideCrosshairWhileADS = true
                   AllowFiringWhileADS = true
-  weapons.ini   [Weapon.NOMBRE] por arma (nombre interno del juego; g01 = pistola). Claves:
-                Enabled, ADSFOV, ADSMouseSensitivityMultiplier (sustituyen a [ADS]) y
-                SightOffsetX/Y, WeaponCloser (ajuste fino del punto de mira). El registro
-                muestra "[GAME] weapon NOMBRE" al cambiar de arma.
+  weapons.ini   [Weapon.NOMBRE] por arma (nombre interno del juego; el registro muestra
+                "[GAME] weapon NOMBRE" al cambiar de arma):
+                  g01 pistola, g02 subfusil, g03 rifle de asalto, g04 escopeta, g05 Vulcan,
+                  g06 francotirador, g07 rifle Gauss, g08 rifle de pulsos, g09 arma de rayos,
+                  g10 generador Nova, g11 Data Leech, g13 lanzagranadas, g19 RPG.
+                Claves: Enabled, ADSFOV, ADSMouseSensitivityMultiplier (sustituyen a [ADS]);
+                Mode = Sight (el arma sube a los ojos), Zoom (solo acerca la vista) o Scope
+                (la mira telescopica del juego: clic derecho la abre y al soltar la cierra);
+                para Sight, SightOffsetX/Y y WeaponCloser mueven el punto de mira y Pitch, Yaw,
+                Roll (grados) sustituyen a los angulos medidos del arma (borralos para medir).
+                Las secciones que falten se anaden con los valores ajustados para cada arma.
   config.ini    [game] iso, [audio] volume.
+
+Modo dev (F1 > Otros, o config.ini [dev] enabled = 1): F5 / F6 ponen en la cuarta ranura
+el arma anterior / siguiente de las 12 del juego (ademas de la pistola), con municion infinita,
+usando la carga de armas del propio juego. Sirve para probar todas las armas en cualquier nivel.
+F9 ejecuta dev.lua (junto a los .ini) en el Lua del juego; el resultado sale en el registro.
 
 Partidas guardadas: carpeta "memstick" junto a los .ini.
 Registro de errores: CodedArmsContagion.log junto al ejecutable.
