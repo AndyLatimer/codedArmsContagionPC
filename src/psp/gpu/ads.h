@@ -10,7 +10,7 @@
 //
 // The arms are the skinned draws of the weapon camera, the weapon the rest. Its sights are
 // its top edge, and the barrel direction is fitted through that edge. The alignment is
-// measured every frame, so the game's own sway of the weapon does not shake the sights. The field of view is scaled relative to the game's (its sniper scope zooms on top).
+// taken when aiming starts, so the game's own sway still moves the weapon (WeaponSway). The field of view is scaled relative to the game's (its sniper scope zooms on top).
 // Settings: host::g_adsSettings.
 #include <cstdint>
 #include <vector>
@@ -49,6 +49,9 @@ private:
     std::vector<size_t> topIdx_;    // the weapon's top-edge vertices (offsets into gun_)
     float adsMat_[16];              // current weapon camera adjustment (column-major)
     float fovScale_ = 1;            // level projection scale (> 1 narrows the view)
+    bool baseValid_ = false;        // the alignment taken when aiming started (endFrame)
+    float baseSight_[3] = {0, 0, 0}, baseYaw_ = 0, basePitch_ = 0, baseRoll_ = 0;
+    size_t baseVerts_ = 0;
     bool muzzleEffect_ = false;     // the draw being observed: a level-camera effect at the muzzle
 };
 

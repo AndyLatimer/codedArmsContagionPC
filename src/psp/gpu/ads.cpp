@@ -111,12 +111,14 @@ void AimDownSights::endFrame() {
     lastUs_ = now;
     const bool want = host::g_ads.load() && cfg.enabled.load();
 
-    if (want && t_ == 0) aligned_ = false;
+    if (want && t_ == 0) aligned_ = baseValid_ = false;
     const size_t gunVerts = gun_.size() / 3;
-    // The weapon is measured every frame while aiming: the game sways it when the camera
-    // turns, and an alignment measured once (with the sway smoothed out afterwards) lagged a
-    // frame behind, so the sights shook on every turn. Measured each frame they stay on the
-    // centre; a frame without the weapon (a weapon change) keeps the last alignment.
+    // The weapon is measured every frame while aiming. The alignment taken when aiming starts
+    // (`base`) puts the sights on the centre and is then kept, so the game's own sway, recoil
+    // and bob still move the weapon naturally; WeaponSway (0..1) blends towards the current
+    // frame's measurement, which holds the sights still (0 = locked on the centre). Applied to
+    // the same frame's weapon draws (gpu.cpp), never a frame late.
+    bool measured = false;
     if (want && gunVerts >= 12) {
         float maxY = -1e9f, minY = 1e9f;
         for (size_t i = 0; i < gun_.size(); i += 3) { maxY = std::max(maxY, gun_[i + 1]); minY = std::min(minY, gun_[i + 1]); }
@@ -201,7 +203,23 @@ void AimDownSights::endFrame() {
             const double dy = m * syy - sy2 * sy2;
             roll_ = m >= 6 && dy > 1e-12 ? (float)std::atan(std::clamp((m * sry - sr * sy2) / dy, -0.5, 0.5)) : 0.0f;
             aligned_ = true;
+            measured = true;
         }
+    }
+    if (measured) {
+        // A different weapon (its vertex count changes) takes a new base alignment.
+        if (baseValid_ && (gunVerts * 4 < baseVerts_ * 3 || gunVerts * 3 > baseVerts_ * 4)) baseValid_ = false;
+        if (!baseValid_) {
+            std::copy(sight_, sight_ + 3, baseSight_);
+            baseYaw_ = yaw_; basePitch_ = pitch_; baseRoll_ = roll_;
+            baseVerts_ = gunVerts;
+            baseValid_ = true;
+        }
+        const float k = std::clamp(cfg.weaponSway.load(), 0.0f, 1.0f);
+        for (int i = 0; i < 3; ++i) sight_[i] += k * (baseSight_[i] - sight_[i]);
+        yaw_ += k * (baseYaw_ - yaw_);
+        pitch_ += k * (basePitch_ - pitch_);
+        roll_ += k * (baseRoll_ - roll_);
     }
     static const bool dbg = std::getenv("CA_ADS_DEBUG") != nullptr;
     if (dbg && want)

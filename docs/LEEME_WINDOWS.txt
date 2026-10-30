@@ -64,6 +64,8 @@ Configuracion (junto al ejecutable, o en la carpeta de preferencias del usuario)
                   ADSFOV = 65
                   ADSMouseSensitivityMultiplier = 0.65
                   HideCrosshairWhileADS = true
+                  WeaponSway = 1                   (balanceo del arma al apuntar: 1 = como
+                                                    en el juego, 0 = mira fija en el centro)
                   AllowFiringWhileADS = true
   weapons.ini   [Weapon.NOMBRE] por arma (nombre interno del juego; g01 = pistola). Claves:
                 Enabled, ADSFOV, ADSMouseSensitivityMultiplier (sustituyen a [ADS]) y
