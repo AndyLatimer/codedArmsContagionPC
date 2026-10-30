@@ -60,6 +60,14 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
 - [x] Tutorial: tras la radio de diagnóstico la primera puerta se abre y se recorre el pasillo
   siguiente (la puerta solo espera a que termine la radio; no es un fallo del port).
 
+- [x] Cierre del juego al guardar desde el terminal tras salir de un nivel (TerminateThread sobre el
+  propio hilo); verificado: "Save completed" y el juego sigue.
+- [x] Se corre por defecto con las teclas; Mayús anda.
+- [x] ADS: la corredera queda centrada (línea central de la parte superior del arma).
+- [x] Windows: hilos nativos (modelo win32 de GCC): cada cambio de hilo cuesta ~6 µs en lugar de
+  ~77 µs (medido bajo Wine). Antes: bloqueo en el logo (esperas cortas imprecisas) y un hilo que
+  giraba sin dormir; ambos corregidos con informes del usuario.
+
 ## No funciona todavía
 - [ ] Teclas 1–5 para elegir arma directamente: el cambio de arma no pasa por la entrada del control
   del jugador (§10); hay que llegar con varias armas (galería de tiro del tutorial) para localizarlo.

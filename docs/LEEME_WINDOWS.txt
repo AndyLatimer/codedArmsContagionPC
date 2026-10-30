@@ -27,8 +27,8 @@ Estado
 Controles por defecto (controls.ini, seccion [bindings]; tambien en el menu F1)
 -------------------------------------------------------------------------------
 Siguen el esquema A del juego (Settings > Controls).
-  W A S D             moverse / pasos laterales
-  Mayus (Shift)       correr (stick a fondo; sin Mayus se anda)
+  W A S D             moverse / pasos laterales (siempre corriendo)
+  Mayus (Shift)       andar (mas despacio) mientras se mantiene
   Ctrl                andar con sigilo (el juego no tiene agacharse)
   Raton               mirar / girar
   Clic izquierdo      disparar (R)
@@ -52,7 +52,8 @@ Configuracion (junto al ejecutable, o en la carpeta de preferencias del usuario)
   graphics.ini  [video]: resolucion, pantalla completa, vsync, render_scale (0 = automatico),
                 widescreen (1 = ampliar a los lados), frame_rate (60 o 30).
   controls.ini  [input]: sensibilidad del raton (mouse_sens_x/y), invert_y, invert_x,
-                mando, walk_speed / creep_speed (inclinacion del stick con el teclado).
+                mando, move_speed / walk_speed / creep_speed (inclinacion del stick con el
+                teclado: 1 = correr, por defecto al moverse; walk_speed con Mayus).
                 [bindings]: teclas (key:NOMBRE, mouse:left|right|middle|x1|x2|wheelup|
                 wheeldown, pad:BOTON, separadas por comas).
                 [ADS]:
