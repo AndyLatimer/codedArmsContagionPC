@@ -636,9 +636,20 @@ static void threadMain(Thread* t) {
     exitThread(t, (int)t->ctx.r[2], false);
 }
 
+// A deleted thread's stack goes back to the user partition (the Thread stays, so its id is
+// still valid for WaitThreadEnd and its parked host thread keeps its condition variable).
+// Keeping the stacks leaked ~80 KB each time the game restarts its sound engine (leaving a
+// level, saving), until FMOD could no longer create its mixer thread: no sound.
+static void freeThreadStack(Thread* t) {
+    if (!t->stackBlock) return;
+    g_userPartition.free(t->stackBlock);
+    t->stackBlock = 0;
+}
+
 static void exitThread(Thread* t, int status, bool deleteIt) {
     std::unique_lock<std::mutex> lk(g_km);
-    (void)deleteIt; // the host thread ends either way; the id stays valid for WaitThreadEnd
+    // The host thread ends either way (its guest stack is no longer used).
+    if (deleteIt) freeThreadStack(t);
     t->exitStatus = status;
     t->state = TState::Dead;
     log("thread %d '%s' exited (%d)", t->id, t->name.c_str(), status);
@@ -669,7 +680,11 @@ static Thread* createThread(const std::string& name, uint32_t entry, int prio, u
     t->attr = attr;
     t->stackSize = (std::max<uint32_t>(stackSize, 0x200) + 0xFF) & ~0xFFu;
     t->stackAddr = g_userPartition.alloc(t->stackSize, 1, 0, 256, &t->stackBlock);
-    if (!t->stackAddr) return nullptr;
+    if (!t->stackAddr) {
+        log("thread '%s': no memory for its stack (%x bytes, largest free block %x)", name.c_str(), t->stackSize,
+            g_userPartition.largestFree());
+        return nullptr;
+    }
     std::memset(hostPtr(t->stackAddr), 0xFF, t->stackSize);
     t->gp = g_gp;
     Thread* raw = t.get();
@@ -1069,9 +1084,12 @@ static void registerCoreHle() {
     HLE(sceKernelDeleteThread) {
         std::lock_guard<std::mutex> lk(g_km);
         Thread* t = findThread((int)A(c, 0));
-        ret(c, t ? 0 : ERR_UNKNOWN_THID);
+        if (!t) { ret(c, ERR_UNKNOWN_THID); return; }
+        if (t->state != TState::Dead && t->state != TState::Dormant) { ret(c, ERR_NOT_DORMANT); return; }
+        freeThreadStack(t);
+        ret(c, 0);
     });
-    auto terminate = [](Ctx* c) {
+    auto terminate = [](Ctx* c, bool deleteIt) {
         std::lock_guard<std::mutex> lk(g_km);
         // The calling thread (id 0 or its own) cannot be terminated: the kernel returns
         // SCE_KERNEL_ERROR_ILLEGAL_THID (PPSSPP). The game does this when it leaves a level to
@@ -1083,11 +1101,12 @@ static void registerCoreHle() {
         // The host thread stays blocked forever; it is never scheduled again.
         t->state = TState::Dead;
         t->waitCond = nullptr;
+        if (deleteIt) freeThreadStack(t);
         g_idleCv.notify_all();
         ret(c, 0);
     };
-    registerHle("sceKernelTerminateThread", terminate);
-    registerHle("sceKernelTerminateDeleteThread", terminate);
+    registerHle("sceKernelTerminateThread", [terminate](Ctx* c) { terminate(c, false); });
+    registerHle("sceKernelTerminateDeleteThread", [terminate](Ctx* c) { terminate(c, true); });
     HLE(sceKernelGetThreadId) { ret(c, (uint32_t)currentThreadId()); });
     HLE(sceKernelChangeThreadPriority) {
         {

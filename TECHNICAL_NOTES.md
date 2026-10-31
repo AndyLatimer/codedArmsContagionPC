@@ -162,3 +162,14 @@ retrato. Los toques cortos (<0,15 s) se pierden: el juego sondea el mando a su r
   la escopeta, Gauss, pulsos, lanzagranadas y RPG; la Vulcan solo hace zoom y el francotirador
   usa la mira del juego (▲: apagada → x2 → x4 → apagada; el front end pulsa ▲ hasta que la
   escala de proyección del nivel, `g_levelProjY`, coincide con el clic derecho).
+- **Cadencia**: `rate` de `player_state` son disparos/s (rifle 10, subfusil 15, escopeta 0,97:
+  medidos iguales). `SetUpgrades` aplica FIRERATE solo si el árbol de mejoras del arma tiene
+  `rate`; la pistola (y el francotirador) no: usan su ritmo interno, 0,77 s (pistola) y ~1 s
+  (francotirador) entre disparos, por tiempo y no por fotogramas; `wpn.setWeaponParam(1,
+  FIRERATE, …)` no lo cambia. `CA_WEAPON_TRACE=1` muestra los cambios del objeto del arma.
+
+## 12. Hilos y memoria
+- Borrar un hilo libera su pila (bloque de la partición de usuario). Antes se perdía: FMOD
+  (FSOUND_Close/Init al salir de un nivel, guardar, cargar) crea y borra su mezclador (64 KB) y
+  su hilo de streaming cada vez; tras varios reinicios ya no había bloque para la pila y el juego
+  seguía sin sonido. `createThread` registra ahora el fallo ("no memory for its stack").

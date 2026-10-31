@@ -57,6 +57,20 @@ void readWeapon(uint32_t player) {
             if (b < 0x21 || b > 0x7E) { name = 0; break; }
         }
     }
+    static const bool wtrace = std::getenv("CA_WEAPON_TRACE") != nullptr;
+    if (wtrace && userPtr(w)) { // the weapon object's words that change (with the frame)
+        static uint32_t last[96], lastW = 0, frame = 0;
+        ++frame;
+        for (int i = 0; i < 96; ++i) {
+            const uint32_t v = psp::read32(w + 4 * i);
+            if (w == lastW && v != last[i]) {
+                float f; std::memcpy(&f, &v, 4);
+                std::fprintf(stderr, "[WTRACE] %u +%02x %08x -> %08x (%g)\n", frame, 4 * i, last[i], v, f);
+            }
+            last[i] = v;
+        }
+        lastW = w;
+    }
     if (psp::host::g_weaponName.exchange(name) != name && name) {
         const char t[5] = {(char)name, (char)(name >> 8), (char)(name >> 16), (char)(name >> 24), 0};
         std::fprintf(stderr, "[GAME] weapon %s\n", t);

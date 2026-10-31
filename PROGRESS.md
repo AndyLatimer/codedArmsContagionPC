@@ -73,6 +73,14 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
 - [x] [NUEVO] **ADS para todas las armas** (13), verificado con capturas una a una; ajustes por
   arma en `weapons.ini` (Mode Sight/Zoom/Scope, Pitch/Yaw/Roll, SightOffset); francotirador con la
   mira del juego (probado en el front end: clic der. → x2, soltar → sin mira); Vulcan solo zoom.
+- [x] Sin sonido tras guardar / salir de un nivel: el runtime no liberaba la pila de los hilos
+  borrados; cada reinicio del sonido de FMOD perdía ~80 KB hasta que su hilo mezclador no se podía
+  crear. Corregido (sceKernelDeleteThread / ExitDelete / TerminateDelete liberan la pila);
+  verificado: el audio sigue tras salir al terminal y entrar en guardar (antes se cortaba ahí).
+- [x] Cadencia de la pistola (~1,3 disparos/s): medida igual a 21 y 60 actualizaciones/s y con
+  clics rápidos (el juego recibe cada pulsación); sus scripts no le envían FIRERATE (su árbol de
+  mejoras no incluye la cadencia) y forzarlo no la cambia: la marca la lógica de la propia pistola.
+  Comportamiento del juego, salvo que una referencia de PSP diga otra cosa (§11).
 - [x] Teclas 1–5: arma de la ranura (verificado en ca_psprun: pistola, rifle, escopeta).
 - [x] Correspondencia g01…g19 ↔ armas verificada (§10).
 
