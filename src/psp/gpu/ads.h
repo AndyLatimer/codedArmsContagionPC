@@ -41,13 +41,19 @@ private:
     std::vector<float> gun_;        // weapon vertices this frame (view space, xyz)
     bool aligned_ = false;          // an alignment was measured for this aim
     size_t alignedVerts_ = 0;       // weapon vertices when it was measured
-    int changed_ = 0;               // frames with a different weapon
+    uint32_t weapon_ = 0;           // the game's weapon (host::g_weaponName) last frame
+    bool waitStable_ = false;       // a new weapon: measure once its draws settle
+    size_t lastCount_ = 0;          // weapon vertices last frame
+    int stableFrames_ = 0;          // frames with that count
     float sight_[3] = {0, 0, 0};    // sight point (view space)
     float yaw_ = 0, pitch_ = 0;     // rotation that puts the barrel along -z
     float roll_ = 0;                // and the weapon upright (the hip pose is canted)
     std::vector<size_t> topIdx_;    // the weapon's top-edge vertices (offsets into gun_)
-    float refTop_[2] = {0, 0};      // their mean x, y when aiming started
-    float sway_[2] = {0, 0};        // their smoothed movement since then
+    size_t sightIdx_ = 0;           // the sight vertex (offset into gun_)
+    float refTop_[2] = {0, 0};      // its x, y when aiming started
+    float sway_[2] = {0, 0};        // its smoothed movement since then
+    bool action_ = false;           // the weapon is in one of its actions (pump, reload)
+    float pose_ = 1;                // 1: up at the sights, 0: down where the game holds it
     float adsMat_[16];              // current weapon camera adjustment (column-major)
     float fovScale_ = 1;            // level projection scale (> 1 narrows the view)
     bool muzzleEffect_ = false;     // the draw being observed: a level-camera effect at the muzzle

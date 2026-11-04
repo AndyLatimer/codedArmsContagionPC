@@ -58,6 +58,7 @@ void fatal(Ctx* c, const char* fmt, ...) {
     if (c) {
         std::fprintf(stderr, "  ra=%08x sp=%08x v0=%08x a0=%08x a1=%08x a2=%08x a3=%08x\n", c->r[31], c->r[29],
                      c->r[2], c->r[4], c->r[5], c->r[6], c->r[7]);
+        printGuestStack(c);
     }
     std::fflush(stderr);
     std::_Exit(3);
@@ -129,6 +130,26 @@ static std::mutex g_km;
 static std::condition_variable g_idleCv;
 static std::map<int, std::unique_ptr<Thread>> g_threads;
 static Thread* g_current = nullptr;
+
+void printGuestStack(Ctx* c) {
+    if (!c) return;
+    const uint32_t lo = g_guest_func_count ? g_guest_funcs[0].addr : 0;
+    const uint32_t hi = g_guest_func_count ? g_guest_funcs[g_guest_func_count - 1].addr : 0;
+    const Thread* t = static_cast<const Thread*>(c->thread);
+    std::fprintf(stderr, "  thread %d '%s' stack:", t ? t->id : 0, t ? t->name.c_str() : "?");
+    uint32_t sp = c->r[29];
+    const uint32_t top = t && t->stackAddr ? t->stackAddr + t->stackSize : sp + 0x1000;
+    int n = 0;
+    for (uint32_t a = sp; a + 4 <= top && a < sp + 0x2000 && n < 16; a += 4) {
+        const uint32_t w = read32(a);
+        if (w > lo && w <= hi + 0x1000 && !(w & 3)) {
+            std::fprintf(stderr, " %08x", w);
+            ++n;
+        }
+    }
+    std::fprintf(stderr, "\n");
+}
+
 static thread_local Thread* t_self = nullptr;
 static int g_nextUid = 0x1000;
 static uint64_t g_readySeq = 0;

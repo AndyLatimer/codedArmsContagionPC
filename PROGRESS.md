@@ -81,6 +81,18 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
   clics rápidos (el juego recibe cada pulsación); sus scripts no le envían FIRERATE (su árbol de
   mejoras no incluye la cadencia) y forzarlo no la cambia: la marca la lógica de la propia pistola.
   Comportamiento del juego, salvo que una referencia de PSP diga otra cosa (§11).
+- [x] Cierre tras ~70 min en el nivel 4 ("indirect call to unknown address 00000000"): un estado
+  nulo en una máquina de estados del juego (0x08b01364). Ahora una llamada a la dirección 0 se
+  salta (v0 = 0) y se registra con la pila del invitado; los fallos del operator new del juego
+  se registran ("[GAME] out of memory"). `CA_HEAP_TRACE=1`: el montón quedó estable (4,29 MB
+  libres) durante 20 min andando y disparando en el tutorial. Causa exacta sin confirmar.
+- [x] ADS más preciso: dispersión al apuntar 0,35 de la del juego (`ADSSpreadMultiplier`, por el
+  `SCATTER_ANGLE` del juego; verificado con los impactos), la mira sigue al propio punto de mira
+  (no al borde superior) y se compensa entera (`SwayCompensation`); el retroceso de cada disparo
+  se ve (0,3 s), y en acciones grandes (bombeo, recarga) el arma baja a su postura del juego y
+  vuelve. Se vuelve a medir solo al cambiar de arma (antes el cartucho de la escopeta lo
+  disparaba y el arma acababa en la cadera). Verificado con capturas: pistola, subfusil, rifle,
+  escopeta (quieto, andando, disparando, recargando).
 - [x] Teclas 1–5: arma de la ranura (verificado en ca_psprun: pistola, rifle, escopeta).
 - [x] Correspondencia g01…g19 ↔ armas verificada (§10).
 

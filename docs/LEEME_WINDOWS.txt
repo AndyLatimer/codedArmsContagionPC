@@ -67,12 +67,18 @@ Configuracion (junto al ejecutable, o en la carpeta de preferencias del usuario)
                   ADSMouseSensitivityMultiplier = 0.65
                   HideCrosshairWhileADS = true
                   AllowFiringWhileADS = true
+                  ADSSpreadMultiplier = 0.35       (dispersion de los disparos al apuntar:
+                                                    0,35 de la del juego; 1 = como el original)
+                  SwayCompensation = 1             (cuanto balanceo del arma se quita al apuntar:
+                                                    1 = la mira queda en el centro; el retroceso,
+                                                    el bombeo y la recarga se siguen viendo)
   weapons.ini   [Weapon.NOMBRE] por arma (nombre interno del juego; el registro muestra
                 "[GAME] weapon NOMBRE" al cambiar de arma):
                   g01 pistola, g02 subfusil, g03 rifle de asalto, g04 escopeta, g05 Vulcan,
                   g06 francotirador, g07 rifle Gauss, g08 rifle de pulsos, g09 arma de rayos,
                   g10 generador Nova, g11 Data Leech, g13 lanzagranadas, g19 RPG.
-                Claves: Enabled, ADSFOV, ADSMouseSensitivityMultiplier (sustituyen a [ADS]);
+                Claves: Enabled, ADSFOV, ADSMouseSensitivityMultiplier, ADSSpreadMultiplier
+                (sustituyen a [ADS]);
                 Mode = Sight (el arma sube a los ojos), Zoom (solo acerca la vista) o Scope
                 (la mira telescopica del juego: clic derecho la abre y al soltar la cierra);
                 para Sight, SightOffsetX/Y y WeaponCloser mueven el punto de mira y Pitch, Yaw,

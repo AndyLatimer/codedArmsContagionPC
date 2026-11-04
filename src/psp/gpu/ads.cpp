@@ -14,7 +14,8 @@ namespace psp::gpu {
 namespace {
 
 constexpr float kGameFovDeg = 80.0f; // the game's own horizontal field of view (projection 1.192)
-constexpr float kSteady = 0.85f;     // share of the weapon's sway taken out while aiming
+constexpr double kRecoilUs = 300000; // after a shot, the weapon's own motion (its recoil) shows
+constexpr float kBobMax = 0.05f;     // larger motions of the sights (view units) are the weapon's actions
 constexpr float kDegToRad = 3.14159265f / 180.0f;
 
 void identity(float* m) { std::memset(m, 0, 16 * sizeof(float)); m[0] = m[5] = m[10] = m[15] = 1; }
@@ -113,16 +114,21 @@ void AimDownSights::endFrame() {
     const bool want = host::g_ads.load() && cfg.enabled.load();
     const bool zoomOnly = cfg.mode.load() == 1; // the weapon stays where the game holds it
 
-    // Measure the weapon when aiming starts (from hip), then keep that alignment; measure again
-    // when a different weapon appears (its vertex count changes for a few frames).
+    // Measure the weapon when aiming starts (from hip), then keep that alignment, through its
+    // animations and effects (a shotgun's shell adds draws for a few frames). Measure again when
+    // the game changes weapon (host::g_weaponName), once the new one has finished coming up
+    // (its draws the same for a few frames).
     if (want && t_ == 0) aligned_ = false;
     const size_t gunVerts = gun_.size() / 3;
-    if (want && aligned_ && gunVerts) {
-        const bool other = gunVerts * 4 < alignedVerts_ * 3 || gunVerts * 3 > alignedVerts_ * 4;
-        changed_ = other ? changed_ + 1 : 0;
-        if (changed_ >= 5) { aligned_ = false; changed_ = 0; }
+    const uint32_t weapon = host::g_weaponName.load();
+    if (weapon != weapon_) {
+        weapon_ = weapon;
+        if (aligned_) { aligned_ = false; waitStable_ = true; }
     }
-    if (want && !aligned_ && !zoomOnly && gunVerts >= 12) {
+    stableFrames_ = gunVerts == lastCount_ ? stableFrames_ + 1 : 0;
+    lastCount_ = gunVerts;
+    if (waitStable_ && stableFrames_ >= 8) waitStable_ = false;
+    if (want && !aligned_ && !waitStable_ && !zoomOnly && gunVerts >= 12) {
         float maxY = -1e9f, minY = 1e9f;
         for (size_t i = 0; i < gun_.size(); i += 3) { maxY = std::max(maxY, gun_[i + 1]); minY = std::min(minY, gun_[i + 1]); }
         const float edge = maxY - 0.12f * (maxY - minY);
@@ -145,11 +151,13 @@ void AimDownSights::endFrame() {
             const float zCut = zFront + 0.25f * (zBack - zFront);
             double fn = 0;
             float fy = -1e9f, fz = 0;
+            size_t fi = topIdx_.front();
             for (size_t i : topIdx_) {
                 if (gun_[i + 2] > zCut) continue;
                 fn += 1;
-                if (gun_[i + 1] > fy) { fy = gun_[i + 1]; fz = gun_[i + 2]; }
+                if (gun_[i + 1] > fy) { fy = gun_[i + 1]; fz = gun_[i + 2]; fi = i; }
             }
+            sightIdx_ = fi;
             sight_[1] = fn > 0 ? fy : maxY;
             sight_[2] = fn > 0 ? fz : (float)(sz / n);
             // Horizontally the weapon is centred on its upper part's centre line (slide,
@@ -207,18 +215,26 @@ void AimDownSights::endFrame() {
             roll_ = m >= 6 && dy > 1e-12 ? (float)std::atan(std::clamp((m * sry - sr * sy2) / dy, -0.5, 0.5)) : 0.0f;
             aligned_ = true;
             alignedVerts_ = gunVerts;
-            refTop_[0] = (float)(sx / n);
-            refTop_[1] = (float)(sy / n);
+            refTop_[0] = gun_[sightIdx_];
+            refTop_[1] = gun_[sightIdx_ + 1];
             sway_[0] = sway_[1] = 0;
+            action_ = false;
         }
-    } else if (want && aligned_ && gunVerts == alignedVerts_ && !topIdx_.empty()) {
-        // Steady aim: the same top-edge vertices as when aiming started; most of the weapon's
-        // own sway and bob since then is taken out (smoothed, so it does not shake).
-        double mx = 0, my = 0;
-        for (size_t i : topIdx_) { mx += gun_[i]; my += gun_[i + 1]; }
-        const float dx = (float)(mx / topIdx_.size()) - refTop_[0], dy = (float)(my / topIdx_.size()) - refTop_[1];
-        sway_[0] += (dx - sway_[0]) * 0.5f;
-        sway_[1] += (dy - sway_[1]) * 0.5f;
+    } else if (want && aligned_ && gunVerts == alignedVerts_ && !topIdx_.empty() &&
+               now - (double)host::g_lastShotUs.load() > kRecoilUs) {
+        // Steady aim: the sight vertex chosen when aiming started; the weapon's own sway and bob
+        // since then is taken out (the sight's own motion: the weapon also pitches as it bobs,
+        // so its tip moves more than its top edge as a whole), lightly smoothed. Not right
+        // after a shot: the recoil shows, then the sights settle back on the centre.
+        // The weapon's own actions (a shotgun's pump, a reload) move it much further than its
+        // bob: for those it goes back to where the game holds it (in front of the eye they
+        // would cover the view) and comes up to the sights again when they end.
+        const float dx = gun_[sightIdx_] - refTop_[0], dy = gun_[sightIdx_ + 1] - refTop_[1];
+        action_ = std::hypot(dx, dy) >= kBobMax;
+        if (!action_) {
+            sway_[0] += (dx - sway_[0]) * 0.7f;
+            sway_[1] += (dy - sway_[1]) * 0.7f;
+        }
     }
     static const bool dbg = std::getenv("CA_ADS_DEBUG") != nullptr;
     if (dbg && want)
@@ -233,7 +249,10 @@ void AimDownSights::endFrame() {
     t_ = target > t_ ? std::min(target, t_ + step) : std::max(target, t_ - step);
     if (target == 0 && t_ == 0) aligned_ = false;
     const float s = smoothstep(t_);
-    const float sw = zoomOnly ? 0.0f : s; // how far the weapon has come up
+    // The weapon down for its actions (the view stays zoomed).
+    const float poseTarget = action_ && want ? 0.0f : 1.0f, poseStep = dt / std::max(0.01f, cfg.transitionS.load());
+    pose_ = poseTarget > pose_ ? std::min(poseTarget, pose_ + poseStep) : std::max(poseTarget, pose_ - poseStep);
+    const float sw = zoomOnly ? 0.0f : s * smoothstep(pose_); // how far the weapon has come up
 
     // The level's field of view: the normal one, narrowing to the aiming one.
     const float hip = fovScale(cfg.normalFov.load()), aim = fovScale(cfg.adsFov.load());
@@ -252,7 +271,8 @@ void AimDownSights::endFrame() {
     rotZ(r, roll * sw);
     rotX(b, pitch * sw);
     rotY(c, yaw * sw);
-    translate(d, -sx - sway_[0] * kSteady * sw, -sy - sway_[1] * kSteady * sw, -sight_[2]);
+    const float steady = std::clamp(cfg.swayCompensation.load(), 0.0f, 1.0f) * sw;
+    translate(d, -sx - sway_[0] * steady, -sy - sway_[1] * steady, -sight_[2]);
     mul(a, r, adsMat_);
     mul(adsMat_, b, adsMat_);
     mul(adsMat_, c, adsMat_);

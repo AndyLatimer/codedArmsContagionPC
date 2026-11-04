@@ -122,6 +122,12 @@ struct AdsSettings {
     // Replace the measured alignment of the weapon (degrees; NaN: measured): its barrel's
     // turn up (pitch), to the left (yaw) and its cant (roll).
     std::atomic<float> pitchDeg{NAN}, yawDeg{NAN}, rollDeg{NAN};
+    // The weapon's spread while aiming, as a share of the game's (its SCATTER_ANGLE; the game
+    // itself aims no better with the sights; game_hooks.cpp applies it through its Lua).
+    std::atomic<float> spread{0.35f};
+    // Share of the weapon's own sway and bob taken out while aiming (1: the sights stay on the
+    // centre; the recoil of each shot still shows, see g_lastShotUs).
+    std::atomic<float> swayCompensation{1.0f};
 };
 extern AdsSettings g_adsSettings;
 // The level camera's vertical projection scale (renderer): the game's scope zooms it.
@@ -132,6 +138,9 @@ extern std::atomic<float> g_levelProjY;
 extern std::atomic<uint32_t> g_weaponName;
 // Player updates so far (game_hooks.cpp): it stops while the game is paused or in its menus.
 extern std::atomic<uint32_t> g_playerUpdates;
+// When the player's weapon last fired (steady clock, microseconds; game_hooks.cpp: its
+// magazine count went down), so the aim down sights view lets that recoil show.
+extern std::atomic<uint64_t> g_lastShotUs;
 
 // Developer Lua console (game_hooks.cpp): chunks of Lua source run in the game's own Lua state
 // the next time the game calls into Lua; each result (the chunk's return value, or the error)

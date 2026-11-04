@@ -30,6 +30,7 @@ const unsigned g_guest_func_count = 0;
 }
 namespace psp::kernel {
 [[noreturn]] void fatal(Ctx*, const char* fmt, ...) { std::fprintf(stderr, "fatal: %s\n", fmt); std::abort(); }
+void printGuestStack(Ctx*) {}
 bool callImportByAddress(Ctx*, uint32_t) { return false; }
 }
 

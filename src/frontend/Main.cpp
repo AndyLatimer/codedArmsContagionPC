@@ -101,12 +101,14 @@ struct FrontSettings {
     float adsTransition = 0.18f;
     float normalFov = 85.0f, adsFov = 65.0f;
     float adsSens = 0.65f;   // look sensitivity multiplier while aiming
+    float adsSpread = 0.35f; // weapon spread multiplier while aiming (1 = the game's)
+    float adsSway = 1.0f;    // share of the weapon's sway taken out while aiming
     bool adsHideCrosshair = true, adsAllowFire = true;
     // weapons.ini: [Weapon.NAME] (the game's internal name, e.g. g01) overrides of the above.
     struct WeaponAds {
         int enabled = -1;                    // -1: as [ADS]
         int mode = 0;                        // 0 Sight (to the eye), 1 Zoom (only), 2 Scope (the game's own)
-        float adsFov = 0, sens = 0;          // 0: as [ADS]
+        float adsFov = 0, sens = 0, spread = 0; // 0: as [ADS]
         float sightX = 0, sightY = 0, closer = 0.2f;
         float pitch = NAN, yaw = NAN, roll = NAN; // degrees, NaN: measured
     };
@@ -200,6 +202,8 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& dir) {
     s.normalFov = std::clamp(getF(ini, "ADS", "NormalFOV", 85.0f), 50.0f, 120.0f);
     s.adsFov = std::clamp(getF(ini, "ADS", "ADSFOV", 65.0f), 20.0f, 120.0f);
     s.adsSens = std::clamp(getF(ini, "ADS", "ADSMouseSensitivityMultiplier", 0.65f), 0.05f, 2.0f);
+    s.adsSpread = std::clamp(getF(ini, "ADS", "ADSSpreadMultiplier", 0.35f), 0.0f, 1.0f);
+    s.adsSway = std::clamp(getF(ini, "ADS", "SwayCompensation", 1.0f), 0.0f, 1.0f);
     s.adsHideCrosshair = getB(ini, "ADS", "HideCrosshairWhileADS", true);
     s.adsAllowFire = getB(ini, "ADS", "AllowFiringWhileADS", true);
     // The game's guns by internal name, with the settings found for each (dev mode, F5/F6).
@@ -240,6 +244,7 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& dir) {
         if (ini.has(sec, "Enabled")) w.enabled = getB(ini, sc, "Enabled", true) ? 1 : 0;
         w.adsFov = ini.has(sec, "ADSFOV") ? std::clamp(getF(ini, sc, "ADSFOV", 65), 10.0f, 120.0f) : 0;
         w.sens = ini.has(sec, "ADSMouseSensitivityMultiplier") ? std::clamp(getF(ini, sc, "ADSMouseSensitivityMultiplier", 0.65f), 0.05f, 2.0f) : 0;
+        w.spread = ini.has(sec, "ADSSpreadMultiplier") ? std::clamp(getF(ini, sc, "ADSSpreadMultiplier", 0.35f), 0.001f, 1.0f) : 0;
         w.sightX = std::clamp(getF(ini, sc, "SightOffsetX", 0), -0.5f, 0.5f);
         w.sightY = std::clamp(getF(ini, sc, "SightOffsetY", 0), -0.5f, 0.5f);
         w.closer = std::clamp(getF(ini, sc, "WeaponCloser", 0.2f), 0.0f, 0.6f);
@@ -290,6 +295,8 @@ void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& dir) 
     ini.set("ADS", "NormalFOV", fmt(s.normalFov));
     ini.set("ADS", "ADSFOV", fmt(s.adsFov));
     ini.set("ADS", "ADSMouseSensitivityMultiplier", fmt(s.adsSens));
+    ini.set("ADS", "ADSSpreadMultiplier", fmt(s.adsSpread));
+    ini.set("ADS", "SwayCompensation", fmt(s.adsSway));
     ini.set("ADS", "HideCrosshairWhileADS", s.adsHideCrosshair ? "true" : "false");
     ini.set("ADS", "AllowFiringWhileADS", s.adsAllowFire ? "true" : "false");
     ini.set("input", "invert_x", s.invertX ? "1" : "0");
@@ -313,6 +320,7 @@ void saveSettings(const FrontSettings& s, ca::Ini& ini, const std::string& dir) 
         "# wheelup|wheeldown, pad:BUTTON, comma separated. Fields of view: horizontal degrees (the game's own is 80).\n",
         "# Coded Arms: Contagion PC - aim down sights per weapon (NAME: the game's internal name, in the log as\n"
         "# [GAME] weapon NAME). A [Weapon.NAME] section overrides [ADS] keys (ADSFOV, ADSMouseSensitivityMultiplier,\n"
+        "# ADSSpreadMultiplier,\n"
         "# Enabled) and sets how the weapon aims: Mode = Sight (up to the eye), Zoom (stays at the hip, zoom only) or\n"
         "# Scope (the game's own scope); for Sight, SightOffsetX/Y and WeaponCloser move the sight picture and\n"
         "# Pitch, Yaw, Roll (degrees) replace the measured angles of the weapon (remove them to measure).\n"};
@@ -355,6 +363,8 @@ void applyAdsSettings(const FrontSettings& s) {
     a.sightY = w ? w->sightY : 0.0f;
     a.weaponCloser = w ? w->closer : 0.2f;
     a.mode = w && w->mode == 1 ? 1 : 0;
+    a.spread = w && w->spread > 0 ? w->spread : s.adsSpread;
+    a.swayCompensation = s.adsSway;
     a.pitchDeg = w ? w->pitch : NAN;
     a.yawDeg = w ? w->yaw : NAN;
     a.rollDeg = w ? w->roll : NAN;

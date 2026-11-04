@@ -173,3 +173,15 @@ retrato. Los toques cortos (<0,15 s) se pierden: el juego sondea el mando a su r
   (FSOUND_Close/Init al salir de un nivel, guardar, cargar) crea y borra su mezclador (64 KB) y
   su hilo de streaming cada vez; tras varios reinicios ya no había bloque para la pila y el juego
   seguía sin sonido. `createThread` registra ahora el fallo ("no memory for its stack").
+- Cierre en el nivel 4: `f_08b01364(gestor, tipo, estado)` (cambio de estado; tipo 1 llama al
+  método 8 del estado actual) recibió estado nulo. `operator new` (0x08811c74) devuelve 0 sin
+  aviso cuando falla (prueba el bloque libre mayor y llama a su manejador): enganchado
+  (`ca_hook_new_failed`, 0x08811da0). `call_indirect(0)` ya no es fatal.
+
+## 13. ADS: dispersión y estabilidad
+- `SCATTER_ANGLE` (wpn 5) por tipo de arma: al apuntar, el gancho de Lua lo pone a
+  `ADSSpreadMultiplier` × (angle + mods.angle) del arma actual y lo restaura al soltar.
+- Disparo detectado por el cargador (arma+0x1C) → `host::g_lastShotUs`; durante 0,3 s no se
+  compensa el balanceo (se ve el retroceso). Desplazamiento del punto de mira ≥ 0,05 (vista) =
+  acción del arma (bombeo, recarga): el arma vuelve a su postura del juego y sube al terminar.
+

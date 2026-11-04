@@ -99,6 +99,9 @@ void notifyCallback(int cbid, uint32_t arg1, uint32_t arg2);
 int runPendingCallbacks();
 
 [[noreturn]] void fatal(Ctx* c, const char* fmt, ...);
+// The calling thread's name and the words of its guest stack that look like return addresses
+// (inside the recompiled code), to the log: a heuristic call stack.
+void printGuestStack(Ctx* c);
 void log(const char* fmt, ...);
 
 IsoReader& iso();

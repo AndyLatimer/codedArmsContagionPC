@@ -27,6 +27,7 @@ AdsSettings g_adsSettings;
 std::atomic<float> g_levelProjY{0};
 std::atomic<uint32_t> g_weaponName{0};
 std::atomic<uint32_t> g_playerUpdates{0};
+std::atomic<uint64_t> g_lastShotUs{0};
 LuaConsole g_luaConsole;
 DevMode g_dev;
 std::atomic<int> g_selectSlot{0};
@@ -56,6 +57,16 @@ void readWeapon(uint32_t player) {
             if (!b) { name &= (1u << (8 * k)) - 1; break; }
             if (b < 0x21 || b > 0x7E) { name = 0; break; }
         }
+    }
+    // A shot: the weapon's magazine count (+0x1C) went down.
+    static uint32_t lastW = 0, lastAmmo = 0;
+    if (userPtr(w)) {
+        const uint32_t ammo = psp::read32(w + 0x1C);
+        if (w == lastW && ammo < lastAmmo)
+            psp::host::g_lastShotUs = (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+        lastW = w;
+        lastAmmo = ammo;
     }
     static const bool wtrace = std::getenv("CA_WEAPON_TRACE") != nullptr;
     if (wtrace && userPtr(w)) { // the weapon object's words that change (with the frame)
@@ -173,11 +184,60 @@ return "dev: weapon " .. list[i]
 )");
 }
 
+// Spread while aiming: the current weapon's SCATTER_ANGLE set to `share` of its own (its
+// player_state angle plus mods, what the game's SetWeaponParams sends), 1 = the game's. The
+// weapons narrowed before (a weapon change while aiming) get theirs back first.
+static std::string spreadChunk(float share) {
+    char head[64];
+    std::snprintf(head, sizeof head, "local share = %.3f\n", share);
+    return head + std::string(R"(
+local C = _import_cached_cache
+local weapons = C.weapon_schemes.player_state.savedPlayerState:Get().weapons
+__pc_spread = __pc_spread or {}
+for ctype, base in pairs(__pc_spread) do wpn.setWeaponParam(ctype, wpn.SCATTER_ANGLE, base, 0) end
+__pc_spread = {}
+local a = C.loader.cfg.objects.powerups.GetHandler().ammo
+local w = a.current_weapon and weapons[a.current_weapon]
+if share >= 1 or not w or not w.angle or not w.ctype then return "" end
+local base = w.angle + ((w.mods and w.mods.angle) or 0)
+__pc_spread[w.ctype] = base
+wpn.setWeaponParam(w.ctype, wpn.SCATTER_ANGLE, base * share, 0)
+return ""
+)");
+}
+
 extern "C" void ca_hook_lua_pcall(Ctx* c) {
     static bool busy = false; // our own lua_pcall comes through here too
     if (busy) return;
+    static const bool heapTrace = std::getenv("CA_HEAP_TRACE") != nullptr;
+    static uint64_t nextHeapUs = 0;
+    if (heapTrace && psp::kernel::wallClockUs() >= nextHeapUs) { // once a minute
+        nextHeapUs = psp::kernel::wallClockUs() + 60000000;
+        // The largest block the game's malloc (0x088bf8d0, free 0x088bf900) can give, by bisection.
+        uint32_t lo = 0, hi = 0x1400000;
+        while (hi - lo > 1024) {
+            const uint32_t mid = (lo + hi) / 2;
+            uint32_t p = 0;
+            psp::kernel::runGuestFunction(0x088bf8d0, mid, 0, 0, 0, &p);
+            if (p) { psp::kernel::runGuestFunction(0x088bf900, p, 0, 0, 0, nullptr); lo = mid; }
+            else hi = mid;
+        }
+        std::fprintf(stderr, "[HEAP] largest free block %u bytes (%.0f s)\n", lo, psp::kernel::wallClockUs() / 1e6);
+    }
     std::string code;
-    if (const int step = psp::host::g_dev.cycle.exchange(0); step && psp::host::g_dev.enabled) {
+    bool quiet = false; // the port's own chunks: only errors to the log
+    // While aiming (or for a new weapon while aiming) the spread is narrowed; restored after.
+    static float appliedShare = 1.0f;
+    static uint32_t appliedWeapon = 0;
+    const uint32_t weapon = psp::host::g_weaponName.load();
+    const float share = psp::host::g_ads.load() ? std::clamp(psp::host::g_adsSettings.spread.load(), 0.0f, 1.0f) : 1.0f;
+    const bool spreadDue = weapon && (share != appliedShare || (share != 1.0f && weapon != appliedWeapon));
+    if (spreadDue) {
+        code = spreadChunk(share);
+        quiet = true;
+        appliedShare = share;
+        appliedWeapon = weapon;
+    } else if (const int step = psp::host::g_dev.cycle.exchange(0); step && psp::host::g_dev.enabled) {
         code = devCycleChunk(step);
     } else if (const int slot = psp::host::g_selectSlot.exchange(0); slot >= 1 && slot <= 5) {
         char chunk[512];
@@ -219,7 +279,7 @@ extern "C" void ca_hook_lua_pcall(Ctx* c) {
     if (st == 0) psp::kernel::runGuestFunction(kLuaPcall, L, 0, 1, 0, &st);
     const std::string result = luaTopToString(L);
     psp::kernel::runGuestFunction(kLuaSetTop, L, top0, 0, 0);
-    std::fprintf(stderr, "[LUA] %s: %s\n", st == 0 ? "ok" : "error", result.c_str());
+    if (!quiet || st != 0) std::fprintf(stderr, "[LUA] %s: %s\n", st == 0 ? "ok" : "error", result.c_str());
     busy = false;
 }
 
@@ -227,3 +287,18 @@ extern "C" void ca_hook_lua_pcall(Ctx* c) {
 namespace psp::kernel {
 void installTextPatches(IsoReader&) {}
 }
+
+// Out of memory ------------------------------------------------------------------------------
+// The game's operator new (0x08811c74) tries its heap and then malloc; when both fail it probes
+// the largest block malloc can still give (s0, in 10 KB and 1 KB steps), calls its own handler
+// and returns 0. Callers do not always check, which ends in a call through a null object, so
+// each failure is logged with the caller and the guest stack.
+extern "C" void ca_hook_new_failed(Ctx* c) {
+    static int reported = 0;
+    if (reported >= 20) return;
+    ++reported;
+    std::fprintf(stderr, "[GAME] out of memory: operator new failed (caller %08x), largest free block ~%u bytes\n",
+                 psp::read32(c->r[29] + 12), c->r[16]);
+    psp::kernel::printGuestStack(c);
+}
+

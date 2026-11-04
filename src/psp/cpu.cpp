@@ -137,6 +137,20 @@ void call_indirect(Ctx* c, uint32_t addr) {
         g_guest_funcs[lo].fn(c);
         return;
     }
+    if (addr == 0) {
+        // A call through a null function pointer (a method of a null object): on the PSP the
+        // game would crash. Seen once after an hour of play (a state machine's current state
+        // was null); skipped with v0 = 0 so the game goes on, and logged with the guest stack.
+        static int reported = 0;
+        if (reported < 20) {
+            ++reported;
+            std::fprintf(stderr, "[CPU] call to address 0 skipped (ra=%08x a0=%08x)\n", c->r[31], c->r[4]);
+            psp::kernel::printGuestStack(c);
+        }
+        c->r[2] = 0;
+        c->r[3] = 0;
+        return;
+    }
     psp::kernel::fatal(c, "indirect call to unknown address %08x (ra=%08x)", addr, c->r[31]);
 }
 
