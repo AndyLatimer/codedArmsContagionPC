@@ -93,6 +93,10 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
   vuelve. Se vuelve a medir solo al cambiar de arma (antes el cartucho de la escopeta lo
   disparaba y el arma acababa en la cadera). Verificado con capturas: pistola, subfusil, rifle,
   escopeta (quieto, andando, disparando, recargando).
+- [x] ADS: alineación medida con el arma quieta y guardada por arma (no al pulsar: apuntar
+  andando o disparando la dejaba torcida y descentrada), compensación constante como en CA1, sin
+  bajar el arma en acciones ni ventanas de retroceso. Verificado con capturas: pistola, subfusil
+  y rifle apuntando a mitad de andar disparando quedan centrados; el disparo da un golpe breve.
 - [x] Teclas 1–5: arma de la ranura (verificado en ca_psprun: pistola, rifle, escopeta).
 - [x] Correspondencia g01…g19 ↔ armas verificada (§10).
 

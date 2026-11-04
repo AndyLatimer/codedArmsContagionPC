@@ -69,9 +69,9 @@ Configuracion (junto al ejecutable, o en la carpeta de preferencias del usuario)
                   AllowFiringWhileADS = true
                   ADSSpreadMultiplier = 0.35       (dispersion de los disparos al apuntar:
                                                     0,35 de la del juego; 1 = como el original)
-                  SwayCompensation = 1             (cuanto balanceo del arma se quita al apuntar:
-                                                    1 = la mira queda en el centro; el retroceso,
-                                                    el bombeo y la recarga se siguen viendo)
+                  SwayCompensation = 0.9           (cuanto balanceo del arma se quita al apuntar:
+                                                    1 = la mira fija en el centro; con menos se ve
+                                                    mas el movimiento y el retroceso)
   weapons.ini   [Weapon.NOMBRE] por arma (nombre interno del juego; el registro muestra
                 "[GAME] weapon NOMBRE" al cambiar de arma):
                   g01 pistola, g02 subfusil, g03 rifle de asalto, g04 escopeta, g05 Vulcan,

@@ -102,7 +102,7 @@ struct FrontSettings {
     float normalFov = 85.0f, adsFov = 65.0f;
     float adsSens = 0.65f;   // look sensitivity multiplier while aiming
     float adsSpread = 0.35f; // weapon spread multiplier while aiming (1 = the game's)
-    float adsSway = 1.0f;    // share of the weapon's sway taken out while aiming
+    float adsSway = 0.9f;    // share of the weapon's sway taken out while aiming
     bool adsHideCrosshair = true, adsAllowFire = true;
     // weapons.ini: [Weapon.NAME] (the game's internal name, e.g. g01) overrides of the above.
     struct WeaponAds {
@@ -203,7 +203,7 @@ void loadSettings(FrontSettings& s, ca::Ini& ini, const std::string& dir) {
     s.adsFov = std::clamp(getF(ini, "ADS", "ADSFOV", 65.0f), 20.0f, 120.0f);
     s.adsSens = std::clamp(getF(ini, "ADS", "ADSMouseSensitivityMultiplier", 0.65f), 0.05f, 2.0f);
     s.adsSpread = std::clamp(getF(ini, "ADS", "ADSSpreadMultiplier", 0.35f), 0.0f, 1.0f);
-    s.adsSway = std::clamp(getF(ini, "ADS", "SwayCompensation", 1.0f), 0.0f, 1.0f);
+    s.adsSway = std::clamp(getF(ini, "ADS", "SwayCompensation", 0.9f), 0.0f, 1.0f);
     s.adsHideCrosshair = getB(ini, "ADS", "HideCrosshairWhileADS", true);
     s.adsAllowFire = getB(ini, "ADS", "AllowFiringWhileADS", true);
     // The game's guns by internal name, with the settings found for each (dev mode, F5/F6).

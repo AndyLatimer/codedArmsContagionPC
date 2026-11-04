@@ -127,7 +127,7 @@ struct AdsSettings {
     std::atomic<float> spread{0.35f};
     // Share of the weapon's own sway and bob taken out while aiming (1: the sights stay on the
     // centre; the recoil of each shot still shows, see g_lastShotUs).
-    std::atomic<float> swayCompensation{1.0f};
+    std::atomic<float> swayCompensation{0.9f};
 };
 extern AdsSettings g_adsSettings;
 // The level camera's vertical projection scale (renderer): the game's scope zooms it.

@@ -181,7 +181,11 @@ retrato. Los toques cortos (<0,15 s) se pierden: el juego sondea el mando a su r
 ## 13. ADS: dispersión y estabilidad
 - `SCATTER_ANGLE` (wpn 5) por tipo de arma: al apuntar, el gancho de Lua lo pone a
   `ADSSpreadMultiplier` × (angle + mods.angle) del arma actual y lo restaura al soltar.
-- Disparo detectado por el cargador (arma+0x1C) → `host::g_lastShotUs`; durante 0,3 s no se
-  compensa el balanceo (se ve el retroceso). Desplazamiento del punto de mira ≥ 0,05 (vista) =
-  acción del arma (bombeo, recarga): el arma vuelve a su postura del juego y sube al terminar.
+- La alineación de cada arma (punto de mira, guiñada, cabeceo, alabeo) se mide con el arma
+  quieta en la cadera (centro de sus vértices < 0,0015 por fotograma durante 20 fotogramas, sin
+  disparo en 0,8 s; disparo detectado por el cargador, arma+0x1C) y se guarda por arma. Antes se
+  medía al pulsar apuntar: andando o disparando quedaba girada y fuera del centro todo el rato.
+- Al apuntar: el desplazamiento del vértice del punto de mira respecto a la postura quieta se
+  compensa (`SwayCompensation`, 0,9, suavizado 0,5): el golpe de cada disparo se ve un momento.
+  Los fotogramas presentados que repiten el último del juego no tienen draws y no cuentan.
 

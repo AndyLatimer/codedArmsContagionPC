@@ -15,6 +15,7 @@
 // Settings: host::g_adsSettings, per weapon: the measured angles can be replaced, and weapons
 // held low (the Vulcan) only zoom.
 #include <cstdint>
+#include <map>
 #include <vector>
 
 #include "psp/gpu/vertex_decoder.h"
@@ -52,8 +53,14 @@ private:
     size_t sightIdx_ = 0;           // the sight vertex (offset into gun_)
     float refTop_[2] = {0, 0};      // its x, y when aiming started
     float sway_[2] = {0, 0};        // its smoothed movement since then
-    bool action_ = false;           // the weapon is in one of its actions (pump, reload)
-    float pose_ = 1;                // 1: up at the sights, 0: down where the game holds it
+    float lastCentre_[3] = {0, 0, 0}; // the weapon's centre last frame
+    int stillFrames_ = 0;           // frames the weapon has been held still
+    // Each weapon's alignment, measured while held still (by host::g_weaponName).
+    struct Alignment {
+        float sight[3], yaw, pitch, roll, ref[2];
+        size_t sightIdx, verts;
+    };
+    std::map<uint32_t, Alignment> cache_;
     float adsMat_[16];              // current weapon camera adjustment (column-major)
     float fovScale_ = 1;            // level projection scale (> 1 narrows the view)
     bool muzzleEffect_ = false;     // the draw being observed: a level-camera effect at the muzzle
