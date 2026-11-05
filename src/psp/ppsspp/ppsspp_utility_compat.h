@@ -145,9 +145,10 @@ inline void ConvertTmToPspDateTime(ScePspDateTime& date_out, const tm& date_in, 
 
 // ---- guest memory (PPSSPP Core/MemMap.h) -----------------------------------------------------
 namespace Memory {
-// PPSSPP's MaxSizeAtAddress for the 32 MB memory map this port emulates.
+// PPSSPP's MaxSizeAtAddress for the memory map this port emulates (64 MB of RAM, memory.h).
 inline u32 MaxSizeAtAddress(u32 address) {
-    if ((address & 0x3E000000) == 0x08000000) return 0x0A000000 - (address & 0x3FFFFFFF);
+    if ((address & 0x3C000000) == 0x08000000)
+        return (address & 0x3FFFFFFF) < psp::kRamEnd ? psp::kRamEnd - (address & 0x3FFFFFFF) : 0;
     if ((address & 0xBF800000) == 0x04000000) return 0x04800000 - (address & 0x3FFFFFFF);
     if ((address & 0x3FFFC000) == 0x00010000) return 0x00014000 - (address & 0x3FFFFFFF);
     return 0;

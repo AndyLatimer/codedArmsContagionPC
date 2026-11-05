@@ -141,6 +141,8 @@ extern std::atomic<uint32_t> g_playerUpdates;
 // When the player's weapon last fired (steady clock, microseconds; game_hooks.cpp: its
 // magazine count went down), so the aim down sights view lets that recoil show.
 extern std::atomic<uint64_t> g_lastShotUs;
+// CA_MALLOC_TRACE: list the game's live heap blocks by caller (ca_psprun: heaplist).
+extern std::atomic<bool> g_heapListRequest;
 
 // Developer Lua console (game_hooks.cpp): chunks of Lua source run in the game's own Lua state
 // the next time the game calls into Lua; each result (the chunk's return value, or the error)

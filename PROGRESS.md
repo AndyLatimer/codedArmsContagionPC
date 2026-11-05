@@ -97,6 +97,12 @@ juego se sube al repositorio. Detalles verificados: `TECHNICAL_NOTES.md`.
   andando o disparando la dejaba torcida y descentrada), compensación constante como en CA1, sin
   bajar el arma en acciones ni ventanas de retroceso. Verificado con capturas: pistola, subfusil
   y rifle apuntando a mitad de andar disparando quedan centrados; el disparo da un golpe breve.
+- [x] Enemigos invisibles y cierre en la misión 4: el montón del juego (18.200 KB fijos,
+  `sce_newlib_heap_kb_size`) se llenaba al cargar el nivel con las cinco armas (≈4 KB libres):
+  operator new fallaba y los enemigos quedaban sin sus estados (invisibles; luego llamada por
+  objeto nulo). Ahora la RAM emulada es de 64 MB (como los PSP posteriores), PSMF_JK.PRX va a
+  0x0BFE0000 y el montón tiene 16 MB más (34.584 KB). Verificado con la partida del usuario:
+  misión 4 con 17,2 MB libres y ningún fallo de memoria.
 - [x] Teclas 1–5: arma de la ranura (verificado en ca_psprun: pistola, rifle, escopeta).
 - [x] Correspondencia g01…g19 ↔ armas verificada (§10).
 

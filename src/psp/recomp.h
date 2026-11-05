@@ -37,10 +37,10 @@ extern const unsigned g_extra_module_count;
 extern const unsigned g_hle_import_count;
 extern const uint32_t g_module_base, g_module_entry;
 
-/* Guest memory: user RAM 0x08000000-0x09FFFFFF, VRAM 0x04000000, scratchpad 0x00010000.
+/* Guest memory: RAM 0x08000000-0x0BFFFFFF, VRAM 0x04000000, scratchpad 0x00010000.
  * Cached/uncached/kernel mirrors (0x4..., 0x8..., 0xC...) are folded by the mask. */
 #define GUEST_ADDR_MASK 0x0FFFFFFFu
-#define GUEST_MEM_SIZE 0x0A000000u
+#define GUEST_MEM_SIZE 0x0C000000u
 #define HOST(a) (c->mem + ((uint32_t)(a) & GUEST_ADDR_MASK))
 static inline uint32_t rd32_(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static inline uint16_t rd16_(const uint8_t* p) { uint16_t v; memcpy(&v, p, 2); return v; }
@@ -70,6 +70,11 @@ extern uint32_t g_prof_counts[];
 void ca_hook_player_turn(Ctx* c);
 void ca_hook_lua_pcall(Ctx* c);
 void ca_hook_new_failed(Ctx* c);
+/* Game-specific set-up of the loaded module, before its main thread starts (game_hooks.cpp). */
+void ca_game_init(void);
+void ca_hook_malloc_done(Ctx* c);
+void ca_hook_free(Ctx* c);
+void ca_hook_malloc_r(Ctx* c);
 
 #define R(n) (c->r[n])
 #define F(n) (c->f[n])

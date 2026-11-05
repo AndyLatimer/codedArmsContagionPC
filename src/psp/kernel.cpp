@@ -972,6 +972,7 @@ int boot(const BootOptions& opt) {
     g_userPartition.reserve(g_module_base, end - g_module_base);
     for (unsigned i = 0; i < g_extra_module_count; ++i)
         g_userPartition.reserve(g_extra_modules[i].base, (g_extra_modules[i].size + 0xFFFF) & ~0xFFFFu);
+    ca_game_init();
     // Interrupt handler stack in kernel RAM (not visible to the game's allocations).
     g_intrStackTop = kKernelRam + 0x00400000;
 

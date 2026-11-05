@@ -307,9 +307,16 @@ void controlThread(std::string path) {
                 std::lock_guard<std::mutex> lk(psp::host::g_aim.m);
                 psp::host::g_aim.add(y, p);
             } else if (c == "memdump") {
-                // User RAM 0x08800000..0x0A000000 to a file
+                // User RAM 0x08800000..kRamEnd to a file
                 if (FILE* o = std::fopen(arg, "wb")) {
-                    std::fwrite(psp::hostPtr(0x08800000), 1, 0x01800000, o);
+                    std::fwrite(psp::hostPtr(0x08800000), 1, psp::kRamEnd - 0x08800000, o);
+                    std::fclose(o);
+                }
+            } else if (c == "heaplist") { // heaplist: the game's live heap blocks by caller (CA_MALLOC_TRACE)
+                psp::host::g_heapListRequest = true;
+            } else if (c == "memdumpv") { // memdumpv FILE: the volatile memory 0x08400000..0x08800000
+                if (FILE* o = std::fopen(arg, "wb")) {
+                    std::fwrite(psp::hostPtr(0x08400000), 1, 0x00400000, o);
                     std::fclose(o);
                 }
             } else if (c == "skipfbtex") {

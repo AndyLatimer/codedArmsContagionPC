@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <mutex>
 
 #include "psp/host.h"
@@ -28,6 +29,7 @@ std::atomic<float> g_levelProjY{0};
 std::atomic<uint32_t> g_weaponName{0};
 std::atomic<uint32_t> g_playerUpdates{0};
 std::atomic<uint64_t> g_lastShotUs{0};
+std::atomic<bool> g_heapListRequest{false};
 LuaConsole g_luaConsole;
 DevMode g_dev;
 std::atomic<int> g_selectSlot{0};
@@ -36,7 +38,7 @@ std::atomic<int> g_targetFps{0};
 }
 
 namespace {
-bool userPtr(uint32_t a) { return a >= 0x08800000 && a < 0x0A000000 && !(a & 3); }
+bool userPtr(uint32_t a) { return a >= 0x08800000 && a < psp::kRamEnd && !(a & 3); }
 float rdf(uint32_t a) { uint32_t v = psp::read32(a); float f; std::memcpy(&f, &v, 4); return f; }
 void wrf(uint32_t a, float f) { uint32_t v; std::memcpy(&v, &f, 4); psp::write32(a, v); }
 
@@ -288,12 +290,77 @@ namespace psp::kernel {
 void installTextPatches(IsoReader&) {}
 }
 
+// Game heap ----------------------------------------------------------------------------------
+// The game's heap is a fixed 18,200 KB (its sce_newlib_heap_kb_size, 0x08bdc160), which
+// mission 4 with a full set of weapons fills as it loads: operator new then fails, enemies are
+// left without their state objects (invisible, then a crash through a null object). The port
+// has the 64 MB memory map of the later PSP models (memory.h), so the heap gets 16 MB more.
+extern "C" void ca_game_init(void) {
+    constexpr uint32_t kHeapKb = 0x08bdc160, kGameKb = 18200, kExtraKb = 16 * 1024;
+    if (psp::read32(kHeapKb) == kGameKb) {
+        psp::write32(kHeapKb, kGameKb + kExtraKb);
+        std::fprintf(stderr, "[GAME] heap %u KB (the game's %u KB + %u KB)\n", kGameKb + kExtraKb, kGameKb, kExtraKb);
+    } else {
+        std::fprintf(stderr, "[GAME] heap size not found at %08x (%u): left as it is\n", kHeapKb, psp::read32(kHeapKb));
+    }
+}
+
 // Out of memory ------------------------------------------------------------------------------
 // The game's operator new (0x08811c74) tries its heap and then malloc; when both fail it probes
 // the largest block malloc can still give (s0, in 10 KB and 1 KB steps), calls its own handler
 // and returns 0. Callers do not always check, which ends in a call through a null object, so
 // each failure is logged with the caller and the guest stack.
+// CA_MALLOC_TRACE: the game's blocks of 32 KB or more still allocated (by caller), listed when
+// operator new fails.
+namespace {
+struct BigBlock { uint32_t size, caller; };
+std::map<uint32_t, BigBlock>& bigBlocks() { static std::map<uint32_t, BigBlock> m; return m; }
+bool mallocTrace() { static const bool on = std::getenv("CA_MALLOC_TRACE") != nullptr; return on; }
+} // namespace
+
+void listLiveBlocks() {
+    std::map<uint32_t, std::pair<uint32_t, uint32_t>> by; // caller -> count, bytes
+    uint32_t total = 0;
+    for (const auto& [addr, b] : bigBlocks()) {
+        auto& e = by[b.caller];
+        e.first++;
+        e.second += b.size;
+        total += b.size;
+    }
+    std::vector<std::pair<uint32_t, std::pair<uint32_t, uint32_t>>> v(by.begin(), by.end());
+    std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second.second > b.second.second; });
+    for (size_t i = 0; i < v.size() && i < 40; ++i)
+        std::fprintf(stderr, "[GAME] live from %08x: %u blocks, %u bytes\n", v[i].first, v[i].second.first, v[i].second.second);
+    std::fprintf(stderr, "[GAME] live blocks: %zu, %u bytes\n", bigBlocks().size(), total);
+}
+
+extern "C" void ca_hook_malloc_done(Ctx* c) {
+    if (mallocTrace() && psp::host::g_heapListRequest.exchange(false)) listLiveBlocks();
+    if (!mallocTrace() || !c->r[2]) return;
+    // Through operator new (0x08811c74): its own caller (operator new's saved ra).
+    uint32_t caller = c->r[31];
+    if (caller == 0x08811cccu) caller = psp::read32(c->r[29] + 16 + 12);
+    bigBlocks()[c->r[2]] = {c->r[16], caller};
+}
+
+extern "C" void ca_hook_malloc_r(Ctx* c) {
+    if (!mallocTrace() || c->r[5] < (1u << 20)) return;
+    std::fprintf(stderr, "[GAME] malloc %u bytes from %08x\n", c->r[5], c->r[31]);
+    psp::kernel::printGuestStack(c);
+}
+
+extern "C" void ca_hook_free(Ctx* c) {
+    if (mallocTrace()) bigBlocks().erase(c->r[4]);
+}
+
 extern "C" void ca_hook_new_failed(Ctx* c) {
+    if (mallocTrace()) {
+        static bool listed = false;
+        if (!listed) {
+            listed = true;
+            listLiveBlocks();
+        }
+    }
     static int reported = 0;
     if (reported >= 20) return;
     ++reported;

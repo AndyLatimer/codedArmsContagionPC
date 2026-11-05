@@ -4,3 +4,6 @@
 08971e28  ca_hook_player_turn   # player control: after TurnInput(.., &dYaw = sp+236, &dPitch = sp+232), before the angles are added
 08a0a7a4  ca_hook_lua_pcall     # lua_pcall(L, nargs, nresults, errfunc), after its first instruction: dev Lua console
 08811da0  ca_hook_new_failed    # operator new (0x08811c74): malloc failed; s0 = the largest block it could still allocate
+088bf8f0  ca_hook_malloc_done   # malloc (0x088bf8d0) returning: v0 = block, s0 = size, ra = caller (CA_MALLOC_TRACE)
+088bf904  ca_hook_free          # free (0x088bf900): a0 = block (CA_MALLOC_TRACE)
+088bfb58  ca_hook_malloc_r      # _malloc_r (0x088bfb58): a1 = size, ra = caller (CA_MALLOC_TRACE: requests of 1 MB or more)

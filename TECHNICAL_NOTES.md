@@ -189,3 +189,13 @@ retrato. Los toques cortos (<0,15 s) se pierden: el juego sondea el mando a su r
   compensa (`SwayCompensation`, 0,9, suavizado 0,5): el golpe de cada disparo se ve un momento.
   Los fotogramas presentados que repiten el último del juego no tienen draws y no cuentan.
 
+## 14. Memoria: 64 MB y montón ampliado
+- El montón de newlib del juego es fijo: `sce_newlib_heap_kb_size` (0x08bdc160) = 18.200 KB,
+  pedido como 'UserSbrk' justo tras el módulo. Misión 4 con cinco armas: dos bloques de nivel
+  (5,8 y 4,9 MB, cargador de recursos 0x08809938), un subheap de 1.500.000 bytes, cinco armas de
+  0x23200… dejan ~4 KB; `operator new` (0x08811c74) devolvía 0 a 0x08b01234 (estados de los
+  enemigos). `CA_MALLOC_TRACE=1` lista los bloques vivos por llamador (al fallar o con `heaplist`).
+- La RAM emulada llega a 0x0C000000 (`kRamEnd`, 64 MB como PSP-2000/3000), el PRX de vídeo se
+  recompila en 0x0BFE0000 (modules.tsv) y `ca_game_init` sube el montón a 34.584 KB.
+  `Memory::MaxSizeAtAddress` (compat de PPSSPP) cubre los 64 MB (las pilas están arriba).
+

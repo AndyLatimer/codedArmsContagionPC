@@ -1,7 +1,9 @@
 #pragma once
 // Guest memory for recompiled PSP code.
 //   0x00010000 scratchpad (16 KB)   0x04000000 VRAM (2 MB)
-//   0x08000000 kernel RAM (8 MB)    0x08800000 user RAM (24 MB) up to 0x0A000000
+//   0x08000000 kernel RAM (8 MB)    0x08800000 user RAM up to 0x0C000000 (56 MB: the 64 MB of the
+//   later PSP models; the PSP-1000 has 24 MB, up to 0x0A000000, but a PC has room to spare and
+//   the games' own heaps can then be enlarged, see ca_game_init)
 // Cached/uncached/kernel mirrors (0x40000000, 0x80000000, ...) are folded by masking.
 #include <cstdint>
 #include <cstring>
@@ -15,7 +17,7 @@ constexpr uint32_t kAddrMask = 0x0FFFFFFFu;
 constexpr uint32_t kMemSize = kAddrMask + 1u;
 constexpr uint32_t kScratchpad = 0x00010000u, kScratchpadSize = 0x4000u;
 constexpr uint32_t kVram = 0x04000000u, kVramSize = 0x00200000u;
-constexpr uint32_t kKernelRam = 0x08000000u, kUserRam = 0x08800000u, kRamEnd = 0x0A000000u;
+constexpr uint32_t kKernelRam = 0x08000000u, kUserRam = 0x08800000u, kRamEnd = 0x0C000000u;
 
 extern uint8_t* g_mem;
 
